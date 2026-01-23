@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">Sword of Legend</string>
+    <string name="title">SWORD OF LEGEND</string>
+    <string name="start_game">START</string>
+    <string name="select_enemy">SELECT YOUR FOE</string>
+    <string name="enemy_dragon">DRAGON</string>
+    <string name="enemy_golem">GOLEM</string>
+    <string name="enemy_beholder">BEHOLDER</string>
+    <string name="enemy_demon_king">DEMON KING</string>
+    <string name="hp_label">HP</string>
+    <string name="life_label">LIFE: %1$s</string>
+    <string name="victory">VICTORY!</string>
+    <string name="game_over">GAME OVER</string>
+    <string name="game_clear">GAME CLEAR!</string>
+    <string name="ending_message">The world is at peace.\nTHANK YOU FOR PLAYING</string>
+    <string name="retry">RETRY</string>
+    <string name="btn_light">LIGHT</string>
+    <string name="btn_heavy">HEAVY</string>
+    <string name="btn_up">↑</string>
+    <string name="btn_down">↓</string>
+    <string name="btn_left">←</string>
+    <string name="btn_right">→</string>
+    <string name="defeated">DEFEATED</string>
+    <string name="learned_double_jump">LEARNED: DOUBLE JUMP!</string>
+    <string name="learned_dive_attack">LEARNED: DIVE ATTACK!</string>
+    <string name="learned_hadoken">LEARNED: WAVE SWORD!</string>
+    <string name="back_to_title">TO TITLE</string>
+</resources>

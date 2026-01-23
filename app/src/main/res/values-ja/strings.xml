@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">ソードオブレジェンド</string>
+    <string name="title">ソードオブレジェンド</string>
+    <string name="start_game">スタート</string>
+    <string name="select_enemy">敵を選べ</string>
+    <string name="enemy_dragon">ドラゴン</string>
+    <string name="enemy_golem">ゴーレム</string>
+    <string name="enemy_beholder">ビホルダー</string>
+    <string name="enemy_demon_king">魔王</string>
+    <string name="hp_label">体力</string>
+    <string name="life_label">残機: %1$s</string>
+    <string name="victory">勝利！</string>
+    <string name="game_over">ゲームオーバー</string>
+    <string name="game_clear">ゲームクリア！</string>
+    <string name="ending_message">世界は平和になった。\nTHANK YOU FOR PLAYING</string>
+    <string name="retry">リトライ</string>
+    <string name="btn_light">弱攻撃</string>
+    <string name="btn_heavy">強攻撃</string>
+    <string name="btn_up">↑</string>
+    <string name="btn_down">↓</string>
+    <string name="btn_left">←</string>
+    <string name="btn_right">→</string>
+    <string name="defeated">討伐済</string>
+    <string name="learned_double_jump">2段ジャンプを習得した！</string>
+    <string name="learned_dive_attack">カブト斬りを習得した！</string>
+    <string name="learned_hadoken">波動剣を習得した！</string>
+    <string name="back_to_title">タイトルへ</string>
+</resources>

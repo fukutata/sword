@@ -1,0 +1,557 @@
+package com.fukutata.sword
+
+import android.content.Context
+import android.graphics.*
+import android.util.AttributeSet
+import android.view.View
+import kotlin.math.cos
+import kotlin.math.sin
+
+enum class EnemyType {
+    DRAGON, GOLEM, BEHOLDER, DEMON_KING
+}
+
+data class Particle(var x: Float, var y: Float, var vx: Float, var vy: Float, var color: Int, var life: Int)
+
+class GameView(context: Context, attrs: AttributeSet) : View(context, attrs) {
+
+    private val paint = Paint().apply { isAntiAlias = true }
+    private val textPaint = Paint().apply {
+        color = Color.YELLOW
+        textSize = 120f
+        typeface = Typeface.DEFAULT_BOLD
+        textAlign = Paint.Align.CENTER
+    }
+
+    private val fireBmp: Bitmap? = try {
+        BitmapFactory.decodeResource(resources, R.drawable.fireball)
+    } catch (e: Exception) {
+        null
+    }
+
+    // ゲーム状態
+    var playerState = PlayerState.IDLE
+    var playerX = 200f
+    var playerY = 0f
+    var playerLife = 5
+    var isGameOver = false
+    var inputX = 0f
+    var inputY = 0f
+    var isDownPressed = false
+    
+    var jumpCount = 0
+    var canDoubleJump = false
+    var canDiveAttack = false
+    var canHadoken = false
+
+    var currentEnemy = EnemyType.DRAGON
+    val enemyRect = RectF(0f, 0f, 0f, 0f)
+    var enemyX = 0f
+    var enemyY = 0f
+    var enemyFlash = 0
+    private var frameCount = 0
+
+    // 演出状態
+    var isReadyGo = false
+    var readyGoTimer = 0
+    var isBossEntering = false
+    var bossEntryY = -500f
+    private val particles = mutableListOf<Particle>()
+    var isSlowMotion = false
+    private var slowMotionTimer = 0
+
+    // 攻撃物
+    var projectileX = -500f
+    var projectileY = 0f
+    var projectileType = 0 // 0:Fire, 1:Punch, 2:Explosion, 3:Tail, 4:Grab
+    var laserAlpha = 0
+    private var laserHasHit = false
+    var hadokenX = -500f
+    var hadokenY = 0f
+
+    // 敵のアクション
+    private var enemyActionTimer = 0
+    private var isBeholderInvisible = false
+    private var beholderMovePhase = 0
+
+    private var damageText = ""
+    private var damageTimer = 0
+    var screenShake = 0f
+    private var groundY = 0f
+    private var velocityY = 0f
+    
+    private val gravity = 1.6f
+    private val jumpPower = -38f
+    private val moveSpeed = 16f
+    private var enemyMoveSpeed = 2.5f
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        groundY = h * 0.7f
+        playerY = groundY
+        setupEnemyPos(w, h)
+    }
+
+    private fun setupEnemyPos(w: Int, h: Int) {
+        val size = h * 0.45f
+        enemyX = w * 0.7f
+        enemyY = groundY + 160f - size
+        enemyRect.set(enemyX, enemyY, enemyX + size, enemyY + size)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        frameCount++
+
+        if (screenShake > 0) {
+            canvas.translate((Math.random().toFloat() - 0.5f) * screenShake, (Math.random().toFloat() - 0.5f) * screenShake)
+            screenShake *= 0.85f
+        }
+
+        drawDungeon(canvas)
+        
+        val updateCount = if (isSlowMotion) {
+            slowMotionTimer--
+            if (slowMotionTimer <= 0) isSlowMotion = false
+            if (frameCount % 3 == 0) 1 else 0
+        } else {
+            1
+        }
+
+        if (updateCount > 0) {
+            if (isBossEntering) {
+                updateBossEntry()
+            } else if (isReadyGo) {
+                updateReadyGo()
+            } else if (!isGameOver) {
+                updatePhysics()
+                updateEnemyAI()
+            }
+            updateParticles()
+        }
+
+        drawEnemy(canvas)
+        drawProjectiles(canvas)
+        drawPlayer(canvas)
+        drawParticles(canvas)
+
+        if (isReadyGo) {
+            val text = if (readyGoTimer > 60) "READY" else "GO!"
+            textPaint.color = if (readyGoTimer > 60) Color.YELLOW else Color.RED
+            canvas.drawText(text, width / 2f, height / 2f, textPaint)
+        }
+
+        if (damageTimer > 0) {
+            textPaint.color = Color.YELLOW
+            textPaint.textSize = 60f
+            textPaint.alpha = (damageTimer * 8).coerceAtMost(255)
+            canvas.drawText(damageText, enemyRect.centerX(), enemyRect.top - 50, textPaint)
+            damageTimer--
+            textPaint.textSize = 120f
+        }
+        invalidate()
+    }
+
+    private fun updateBossEntry() {
+        if (bossEntryY < enemyY) {
+            bossEntryY += 4f
+        } else {
+            isBossEntering = false
+            startReadyGo()
+        }
+    }
+
+    private fun updateReadyGo() {
+        readyGoTimer--
+        if (readyGoTimer <= 0) isReadyGo = false
+    }
+
+    private fun updateEnemyAI() {
+        if (isGameOver || isReadyGo || isBossEntering) return
+        
+        // 基本的な追尾
+        val targetX = if (isBeholderInvisible) enemyX else playerX + 350f
+        if (enemyX > targetX + 10) enemyX -= enemyMoveSpeed
+        else if (enemyX < targetX - 10) enemyX += enemyMoveSpeed
+        
+        enemyX = enemyX.coerceIn(width * 0.1f, width - enemyRect.width())
+        
+        val hover = if (currentEnemy != EnemyType.GOLEM) sin(frameCount * 0.08).toFloat() * 25f else 0f
+        enemyRect.offsetTo(enemyX, enemyY + hover)
+
+        // 特殊アクションタイマー
+        enemyActionTimer++
+        if (enemyActionTimer > 150) {
+            performEnemySpecialAction()
+            enemyActionTimer = 0
+        }
+    }
+
+    private fun performEnemySpecialAction() {
+        when (currentEnemy) {
+            EnemyType.DRAGON -> {
+                // 尻尾攻撃 (近距離)
+                if (Math.abs(enemyX - playerX) < 500f) {
+                    projectileType = 3
+                    projectileX = enemyX
+                    projectileY = enemyY + 200f
+                }
+            }
+            EnemyType.GOLEM -> {
+                // 掴み投げ (近距離)
+                if (Math.abs(enemyX - playerX) < 300f && playerState != PlayerState.JUMPING) {
+                    projectileType = 4
+                    projectileX = enemyX
+                    projectileY = enemyY + 150f
+                }
+            }
+            EnemyType.BEHOLDER -> {
+                // 分裂・ワープ
+                isBeholderInvisible = true
+                spawnExplosion(enemyRect.centerX(), enemyRect.centerY(), Color.MAGENTA)
+                postDelayed({
+                    enemyX = if (enemyX > width / 2) width * 0.2f else width * 0.8f
+                    isBeholderInvisible = false
+                    spawnExplosion(enemyRect.centerX(), enemyRect.centerY(), Color.MAGENTA)
+                }, 800)
+            }
+            EnemyType.DEMON_KING -> {}
+        }
+    }
+
+    private fun updateParticles() {
+        val iterator = particles.iterator()
+        while (iterator.hasNext()) {
+            val p = iterator.next()
+            p.x += p.vx
+            p.y += p.vy
+            p.vy += 0.2f
+            p.life--
+            if (p.life <= 0) iterator.remove()
+        }
+    }
+
+    private fun drawParticles(canvas: Canvas) {
+        for (p in particles) {
+            paint.color = p.color
+            paint.alpha = (p.life * 5).coerceIn(0, 255)
+            canvas.drawRect(p.x, p.y, p.x + 10, p.y + 10, paint)
+        }
+        paint.alpha = 255
+    }
+
+    fun spawnExplosion(x: Float, y: Float, color: Int) {
+        for (i in 0..40) {
+            val vx = (Math.random().toFloat() - 0.5f) * 15f
+            val vy = (Math.random().toFloat() - 0.8f) * 15f
+            particles.add(Particle(x, y, vx, vy, color, 80))
+        }
+    }
+
+    fun startVictorySlow() {
+        isSlowMotion = true
+        slowMotionTimer = 120
+        spawnExplosion(enemyRect.centerX(), enemyRect.centerY(), Color.WHITE)
+        spawnExplosion(enemyRect.left, enemyRect.top, Color.GRAY)
+        spawnExplosion(enemyRect.right, enemyRect.bottom, Color.YELLOW)
+    }
+
+    private fun drawDungeon(canvas: Canvas) {
+        canvas.drawColor(if (currentEnemy == EnemyType.DEMON_KING) Color.parseColor("#220000") else Color.parseColor("#121212"))
+        paint.color = Color.parseColor("#1F1F1F")
+        for (i in 0..15) {
+            val offset = (frameCount % 100) * 2f
+            canvas.drawRect((i * 450f) - offset, 0f, (i * 450f + 100f) - offset, height.toFloat(), paint)
+        }
+        paint.color = Color.parseColor("#0A0A0A")
+        canvas.drawRect(0f, groundY + 160f, width.toFloat(), height.toFloat(), paint)
+    }
+
+    private fun drawEnemy(canvas: Canvas) {
+        if (isGameOver && enemyHP_internal <= 0) return 
+        if (isBeholderInvisible) return
+
+        val rect = if (currentEnemy == EnemyType.DEMON_KING && isBossEntering) {
+            RectF(enemyRect.left, bossEntryY, enemyRect.right, bossEntryY + enemyRect.height())
+        } else {
+            enemyRect
+        }
+        if (enemyFlash > 0) {
+            paint.colorFilter = LightingColorFilter(0xFFFFFF, 0xFFFFFF)
+            enemyFlash--
+        } else { paint.colorFilter = null }
+
+        when (currentEnemy) {
+            EnemyType.DRAGON -> drawDragon(canvas, rect)
+            EnemyType.GOLEM -> drawGolem(canvas, rect)
+            EnemyType.BEHOLDER -> drawBeholder(canvas, rect)
+            EnemyType.DEMON_KING -> drawDemonKing(canvas, rect)
+        }
+        paint.colorFilter = null
+    }
+
+    private var enemyHP_internal = 100 
+
+    private fun drawDragon(canvas: Canvas, rect: RectF) {
+        paint.color = Color.parseColor("#2E7D32")
+        val wingPath = Path()
+        val wingSweep = sin(frameCount * 0.15f) * 30f
+        wingPath.moveTo(rect.centerX(), rect.centerY())
+        wingPath.lineTo(rect.right + 100, rect.top - 50 + wingSweep)
+        wingPath.lineTo(rect.right + 50, rect.centerY() + 50)
+        wingPath.close()
+        canvas.drawPath(wingPath, paint)
+        paint.color = Color.parseColor("#1B5E20")
+        canvas.drawOval(rect, paint)
+        val tailPath = Path()
+        val tailSwing = if (projectileType == 3) sin(frameCount * 0.5f) * 100f else 0f
+        tailPath.moveTo(rect.right - 20, rect.centerY())
+        tailPath.lineTo(rect.right + 120 + tailSwing, rect.bottom - 20)
+        tailPath.lineTo(rect.right + 20, rect.bottom)
+        tailPath.close()
+        canvas.drawPath(tailPath, paint)
+        val headRect = RectF(rect.left - 80, rect.top + 20, rect.left + 40, rect.top + 120)
+        canvas.drawOval(headRect, paint)
+        paint.color = Color.YELLOW
+        canvas.drawCircle(headRect.left + 30, headRect.top + 50, 12f, paint)
+    }
+
+    private fun drawGolem(canvas: Canvas, rect: RectF) {
+        paint.color = Color.parseColor("#4E342E")
+        canvas.drawRect(rect.left + 40, rect.top + 60, rect.right - 40, rect.bottom, paint)
+        canvas.drawRect(rect.left + 70, rect.top + 10, rect.right - 70, rect.top + 70, paint)
+        paint.color = Color.parseColor("#3E2723")
+        val armMove = if (projectileType == 4) sin(frameCount * 0.4f) * 60f else sin(frameCount * 0.1f) * 15f
+        canvas.drawRect(rect.left - 40, rect.top + 80 + armMove, rect.left + 50, rect.bottom - 30 + armMove, paint)
+        canvas.drawRect(rect.right - 50, rect.top + 80 - armMove, rect.right + 40, rect.bottom - 30 - armMove, paint)
+        paint.color = Color.RED
+        canvas.drawCircle(rect.centerX() - 25, rect.top + 40, 10f, paint)
+        canvas.drawCircle(rect.centerX() + 25, rect.top + 40, 10f, paint)
+    }
+
+    private fun drawBeholder(canvas: Canvas, rect: RectF) {
+        paint.color = Color.parseColor("#6A1B9A")
+        canvas.drawCircle(rect.centerX(), rect.centerY(), rect.width()/2.2f, paint)
+        paint.color = Color.WHITE
+        canvas.drawCircle(rect.centerX() - 40, rect.centerY(), 60f, paint)
+        paint.color = Color.parseColor("#00BCD4")
+        canvas.drawCircle(rect.centerX() - 50, rect.centerY(), 30f, paint)
+        paint.color = Color.BLACK
+        canvas.drawCircle(rect.centerX() - 55, rect.centerY(), 15f, paint)
+        paint.color = Color.parseColor("#4A148C")
+        for (i in 0..5) {
+            val anim = sin(frameCount * 0.1f + i).toFloat() * 20f
+            val angle = Math.toRadians(-60.0 - i * 35.0).toFloat()
+            val sx = rect.centerX() + cos(angle) * (130 + anim)
+            val sy = rect.centerY() + sin(angle) * (130 + anim)
+            canvas.drawCircle(sx, sy, 18f, paint)
+            paint.color = Color.RED
+            canvas.drawCircle(sx, sy, 7f, paint)
+            paint.color = Color.parseColor("#4A148C")
+        }
+    }
+
+    private fun drawDemonKing(canvas: Canvas, rect: RectF) {
+        paint.color = Color.BLACK
+        canvas.drawOval(rect, paint)
+        paint.color = Color.RED
+        val eyeY = rect.top + 120
+        canvas.drawCircle(rect.centerX() - 70, eyeY, 25f, paint)
+        canvas.drawCircle(rect.centerX() + 70, eyeY, 25f, paint)
+    }
+
+    private fun drawProjectiles(canvas: Canvas) {
+        if (isBossEntering || isReadyGo) return
+        
+        // 特殊攻撃の判定
+        if (projectileType == 3) { // 尻尾
+            val tailHitRect = RectF(enemyRect.right, enemyRect.centerY(), enemyRect.right + 200, enemyRect.bottom)
+            if (RectF.intersects(tailHitRect, getPlayerRect())) onPlayerHit()
+            if (frameCount % 20 == 0) projectileType = 0
+        }
+        if (projectileType == 4) { // 掴み
+            val grabRect = RectF(enemyRect.left - 100, enemyRect.centerY(), enemyRect.left, enemyRect.bottom)
+            if (RectF.intersects(grabRect, getPlayerRect())) onPlayerGrabbed()
+            if (frameCount % 30 == 0) projectileType = 0
+        }
+
+        if (laserAlpha > 0) {
+            paint.color = Color.WHITE
+            paint.alpha = laserAlpha
+            canvas.drawRect(0f, enemyRect.centerY() - 25, enemyRect.left, enemyRect.centerY() + 25, paint)
+            if (!laserHasHit && laserAlpha > 180) {
+                if (getPlayerRect().top < enemyRect.centerY() + 65 && getPlayerRect().bottom > enemyRect.centerY() - 65) {
+                    onPlayerHit()
+                    laserHasHit = true
+                }
+            }
+            laserAlpha -= 10
+        }
+        if (projectileX > -200 && projectileX < width + 200) {
+            val pRect = RectF(projectileX - 60, projectileY - 60, projectileX + 60, projectileY + 60)
+            if (projectileType == 0) {
+                paint.color = Color.RED; canvas.drawCircle(projectileX, projectileY, 50f, paint)
+                projectileX -= 20f
+            }
+            if (RectF.intersects(pRect, getPlayerRect())) onPlayerHit()
+        }
+        if (hadokenX != -500f) {
+            hadokenX += 30f
+            paint.color = Color.CYAN; canvas.drawCircle(hadokenX, hadokenY, 40f, paint)
+            if (RectF.intersects(RectF(hadokenX-50, hadokenY-50, hadokenX+50, hadokenY+50), enemyRect)) hadokenX = -500f
+            if (hadokenX > width) hadokenX = -500f
+        }
+    }
+
+    private fun drawPlayer(canvas: Canvas) {
+        val pRect = getPlayerRect()
+        if (playerState == PlayerState.LIGHT_ATTACK || playerState == PlayerState.HEAVY_ATTACK || playerState == PlayerState.DIVE_ATTACK) {
+            paint.color = if (playerState == PlayerState.HEAVY_ATTACK) Color.YELLOW else if (playerState == PlayerState.DIVE_ATTACK) Color.CYAN else Color.WHITE
+            paint.alpha = 180
+            val range = if (playerState == PlayerState.HEAVY_ATTACK) 450f else 280f
+            canvas.drawRect(pRect.right, pRect.top - 20, pRect.right + range, pRect.bottom + 20, paint)
+            paint.alpha = 255
+        }
+        if (playerState == PlayerState.GUARD) {
+            paint.color = Color.GREEN; paint.alpha = 100
+            canvas.drawCircle(pRect.centerX(), pRect.centerY(), 120f, paint)
+            paint.alpha = 255
+        }
+        drawHero(canvas, pRect)
+    }
+
+    private fun drawHero(canvas: Canvas, rect: RectF) {
+        canvas.save()
+        if (playerState == PlayerState.THROWN) canvas.rotate(frameCount * 20f, rect.centerX(), rect.centerY())
+        else if (playerState == PlayerState.DIVE_ATTACK) canvas.rotate(180f, rect.centerX(), rect.centerY())
+        
+        paint.color = Color.RED
+        canvas.drawRect(rect.left, rect.top + 60, rect.right, rect.bottom - 20, paint) // Simple Body
+        paint.color = Color.parseColor("#FFCCBC")
+        canvas.drawCircle(rect.centerX(), rect.top + 35, 35f, paint) // Head
+        
+        canvas.restore()
+    }
+
+    private fun updatePhysics() {
+        if (playerState == PlayerState.THROWN) {
+            playerX -= 30f
+            playerY -= 10f
+            if (playerX < 50f) {
+                playerState = PlayerState.IDLE
+                screenShake = 40f
+            }
+            return
+        }
+
+        if (inputX != 0f && playerState != PlayerState.DIVE_ATTACK && playerState != PlayerState.GUARD) {
+            playerX += inputX * moveSpeed
+            playerX = playerX.coerceIn(0f, width - 160f)
+        }
+        if (playerY < groundY || velocityY < 0) {
+            velocityY += gravity
+            playerY += velocityY
+            if (playerY > groundY) {
+                playerY = groundY
+                velocityY = 0f
+                if (playerState == PlayerState.JUMPING || playerState == PlayerState.DIVE_ATTACK) {
+                    if (playerState == PlayerState.DIVE_ATTACK) screenShake = 25f
+                    playerState = PlayerState.IDLE
+                    jumpCount = 0
+                }
+            }
+        }
+    }
+
+    fun getPlayerRect() = RectF(playerX, playerY, playerX + 160f, playerY + 160f)
+
+    fun checkHit(type: PlayerState): Boolean {
+        if (isBossEntering || isReadyGo || isGameOver) return false
+        val range = if (type == PlayerState.HEAVY_ATTACK) 450f else 280f
+        val attackRect = RectF(playerX + 160f, playerY - 50f, playerX + 160f + range, playerY + 210f)
+        val isHit = RectF.intersects(attackRect, enemyRect)
+        if (isHit) {
+            screenShake = if (type == PlayerState.HEAVY_ATTACK) 35f else 12f
+            (context as? MainActivity)?.playSeHit()
+        }
+        return isHit
+    }
+
+    fun onGuardBreak() {
+        if (playerState == PlayerState.GUARD) {
+            onPlayerGrabbed()
+        }
+    }
+
+    private fun onPlayerGrabbed() {
+        playerState = PlayerState.THROWN
+        screenShake = 30f
+        playerLife--
+        (context as? MainActivity)?.playSeDamage()
+    }
+
+    fun showDamage(amount: Int) {
+        damageText = amount.toString()
+        damageTimer = 40
+        enemyFlash = 5
+    }
+
+    fun startJump() {
+        if (isGameOver || playerState != PlayerState.IDLE && playerState != PlayerState.JUMPING) return
+        if (playerY >= groundY) {
+            velocityY = jumpPower; playerState = PlayerState.JUMPING; jumpCount = 1
+        } else if (canDoubleJump && jumpCount == 1) {
+            velocityY = jumpPower * 0.85f; jumpCount = 2
+        }
+    }
+
+    fun spawnEnemyAttack() {
+        if (isGameOver || isBossEntering || isReadyGo) return
+        laserHasHit = false
+        when (currentEnemy) {
+            EnemyType.DRAGON -> { projectileType = 0; projectileX = enemyRect.left; projectileY = enemyRect.centerY() }
+            EnemyType.GOLEM -> { projectileType = 0; projectileX = enemyRect.left; projectileY = enemyRect.centerY() + 80 }
+            EnemyType.BEHOLDER -> { laserAlpha = 255 }
+            EnemyType.DEMON_KING -> { laserAlpha = 255 }
+        }
+    }
+
+    private fun onPlayerHit() {
+        if (isGameOver || isBossEntering || isReadyGo) return
+        if (playerState == PlayerState.GUARD) {
+            screenShake = 5f
+            return
+        }
+        playerLife--
+        projectileX = -500f
+        screenShake = 30f
+        (context as? MainActivity)?.playSeDamage()
+        if (playerLife <= 0) { playerLife = 0; isGameOver = true }
+    }
+
+    fun fireHadoken() {
+        if (!canHadoken || hadokenX != -500f || isBossEntering || isReadyGo) return
+        hadokenX = playerX + 160f; hadokenY = playerY + 80f
+    }
+
+    fun onEnemyDefeated() {
+        enemyHP_internal = 0
+        startVictorySlow()
+    }
+
+    fun startReadyGo() {
+        isReadyGo = true; readyGoTimer = 100
+    }
+
+    fun reset(enemy: EnemyType) {
+        currentEnemy = enemy; playerX = 200f; playerY = groundY; playerLife = 5
+        projectileX = -500f; hadokenX = -500f; laserAlpha = 0; laserHasHit = false
+        velocityY = 0f; isGameOver = false; playerState = PlayerState.IDLE
+        damageTimer = 0; inputX = 0f; inputY = 0f; jumpCount = 0; enemyHP_internal = 100
+        particles.clear(); isSlowMotion = false; slowMotionTimer = 0; enemyActionTimer = 0
+        isBeholderInvisible = false
+        setupEnemyPos(width, height)
+        if (enemy == EnemyType.DEMON_KING) { bossEntryY = -600f; isBossEntering = true }
+        else { isBossEntering = false; startReadyGo() }
+    }
+}
