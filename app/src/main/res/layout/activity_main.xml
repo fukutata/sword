@@ -123,31 +123,23 @@
         <Button android:id="@+id/btnSkillHadoken" android:layout_width="300dp" android:layout_height="wrap_content" android:text="@string/learned_hadoken" android:layout_margin="5dp"/>
     </LinearLayout>
 
-    <!-- 操作パネル (円形パッドとボタン) -->
+    <!-- 操作パネル (白猫風バーチャルパッド) -->
     <RelativeLayout
         android:id="@+id/controllerLayout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="gone">
 
-        <!-- 円形十字キー -->
-        <FrameLayout
-            android:id="@+id/joystickArea"
-            android:layout_width="200dp"
-            android:layout_height="200dp"
-            android:layout_alignParentBottom="true"
-            android:layout_alignParentStart="true"
-            android:layout_margin="20dp"
-            android:background="@android:drawable/btn_default">
-            <!-- 各方向ボタンを円状に配置 -->
-            <Button android:id="@+id/btnUp" android:text="↑" android:layout_width="60dp" android:layout_height="60dp" android:layout_gravity="top|center_horizontal" android:backgroundTint="#555555"/>
-            <Button android:id="@+id/btnDown" android:text="↓" android:layout_width="60dp" android:layout_height="60dp" android:layout_gravity="bottom|center_horizontal" android:backgroundTint="#555555"/>
-            <Button android:id="@+id/btnLeft" android:text="←" android:layout_width="60dp" android:layout_height="60dp" android:layout_gravity="start|center_vertical" android:backgroundTint="#555555"/>
-            <Button android:id="@+id/btnRight" android:text="→" android:layout_width="60dp" android:layout_height="60dp" android:layout_gravity="end|center_vertical" android:backgroundTint="#555555"/>
-        </FrameLayout>
+        <!-- 左半分どこでも反応するジョイスティック -->
+        <com.fukutata.sword.JoystickView
+            android:id="@+id/joystickView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_toStartOf="@+id/buttonArea" />
 
-        <!-- 攻撃・防御ボタン -->
+        <!-- 攻撃・防御ボタンエリア -->
         <LinearLayout
+            android:id="@+id/buttonArea"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_alignParentBottom="true"

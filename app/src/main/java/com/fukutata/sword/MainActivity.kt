@@ -23,6 +23,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var uiContainer: View
     private lateinit var controllerLayout: View
     private lateinit var btnRetry: Button
+    private lateinit var joystickView: JoystickView
 
     private lateinit var btnDragon: Button
     private lateinit var btnGolem: Button
@@ -59,6 +60,7 @@ class MainActivity : AppCompatActivity() {
         uiContainer = findViewById(R.id.uiContainer)
         controllerLayout = findViewById(R.id.controllerLayout)
         btnRetry = findViewById(R.id.btnRetry)
+        joystickView = findViewById(R.id.joystickView)
 
         btnDragon = findViewById(R.id.btnSelectDragon)
         btnGolem = findViewById(R.id.btnSelectGolem)
@@ -75,7 +77,7 @@ class MainActivity : AppCompatActivity() {
         btnBeholder.setOnClickListener { startStage(EnemyType.BEHOLDER) }
         btnDemonKing.setOnClickListener { startStage(EnemyType.DEMON_KING) }
 
-        setupController()
+        setupJoystick()
 
         findViewById<Button>(R.id.btnSkillDoubleJump).setOnClickListener { learnSkill(1) }
         findViewById<Button>(R.id.btnSkillDiveAttack).setOnClickListener { learnSkill(2) }
@@ -84,10 +86,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnLight).setOnClickListener { performAttack(false) }
         findViewById<Button>(R.id.btnHeavy).setOnClickListener { performAttack(true) }
         
-        // 防御ボタン
         findViewById<Button>(R.id.btnGuard).setOnTouchListener { _, event ->
             if (gameView.isGameOver || gameView.isReadyGo || gameView.isBossEntering) return@setOnTouchListener false
-            
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     if (gameView.playerState == PlayerState.IDLE) {
@@ -124,7 +124,6 @@ class MainActivity : AppCompatActivity() {
                 if (gameView.playerState == PlayerState.GUARD && guardStartTime > 0) {
                     val duration = System.currentTimeMillis() - guardStartTime
                     if (duration >= guardBreakLimit) {
-                        // ガードブレイク（投げ飛ばし）
                         gameView.onGuardBreak()
                         guardStartTime = 0
                     } else {
@@ -136,37 +135,26 @@ class MainActivity : AppCompatActivity() {
         handler.post(monitorTask)
     }
 
-    @SuppressLint("ClickableViewAccessibility")
-    private fun setupController() {
-        val onTouch = View.OnTouchListener { v, event ->
-            val isPressed = event.action == MotionEvent.ACTION_DOWN || event.action == MotionEvent.ACTION_MOVE
-            val isReleased = event.action == MotionEvent.ACTION_UP || event.action == MotionEvent.ACTION_CANCEL
-            
-            when (v.id) {
-                R.id.btnLeft -> { gameView.inputX = if (isReleased) 0f else -1f; if (event.action == MotionEvent.ACTION_DOWN) recordInput("L") }
-                R.id.btnRight -> { gameView.inputX = if (isReleased) 0f else 1f; if (event.action == MotionEvent.ACTION_DOWN) recordInput("R") }
-                R.id.btnUp -> { 
-                    gameView.inputY = if (isReleased) 0f else -1f
-                    if (event.action == MotionEvent.ACTION_DOWN) { gameView.startJump(); recordInput("U") }
-                }
-                R.id.btnDown -> { 
-                    gameView.inputY = if (isReleased) 0f else 1f
-                    if (event.action == MotionEvent.ACTION_DOWN) recordInput("D")
-                }
+    private fun setupJoystick() {
+        joystickView.onMoveListener = { x, y ->
+            gameView.inputX = x
+            gameView.inputY = y
+            gameView.isDownPressed = y > 0.5f
+            if (y < -0.7f) gameView.startJump()
+            if (Math.abs(x) > 0.5f || Math.abs(y) > 0.5f) {
+                val dir = if (y < -0.5f) "U" else if (y > 0.5f) "D" else if (x < -0.5f) "L" else "R"
+                recordInput(dir)
             }
-            true
         }
-        findViewById<Button>(R.id.btnLeft).setOnTouchListener(onTouch)
-        findViewById<Button>(R.id.btnRight).setOnTouchListener(onTouch)
-        findViewById<Button>(R.id.btnUp).setOnTouchListener(onTouch)
-        findViewById<Button>(R.id.btnDown).setOnTouchListener(onTouch)
     }
 
     private fun recordInput(key: String) {
         val now = System.currentTimeMillis()
         if (now - commandTimer > 500) lastInput = ""
-        lastInput += key
-        commandTimer = now
+        if (lastInput.isEmpty() || lastInput.last().toString() != key) {
+            lastInput += key
+            commandTimer = now
+        }
     }
 
     private fun showSelectionScreen() {
@@ -244,7 +232,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (gameView.canDiveAttack && gameView.playerState == PlayerState.JUMPING && gameView.inputY > 0) {
+        if (gameView.canDiveAttack && gameView.playerState == PlayerState.JUMPING && gameView.isDownPressed) {
             gameView.playerState = PlayerState.DIVE_ATTACK
             val diveTask = object : Runnable {
                 override fun run() {
@@ -289,6 +277,7 @@ class MainActivity : AppCompatActivity() {
         val isFinal = gameView.currentEnemy == EnemyType.DEMON_KING
         
         handler.postDelayed({
+            controllerLayout.visibility = View.GONE // パッドを隠す
             if (isFinal) {
                 txtResult.text = getString(R.string.ending_message)
                 resultLayout.visibility = View.VISIBLE
@@ -322,6 +311,7 @@ class MainActivity : AppCompatActivity() {
     private fun checkGameOver() {
         if (gameView.playerLife <= 0) {
             enemyTimer?.cancel()
+            controllerLayout.visibility = View.GONE
             txtResult.text = getString(R.string.game_over)
             btnRetry.text = getString(R.string.retry)
             resultLayout.visibility = View.VISIBLE
