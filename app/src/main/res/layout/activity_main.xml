@@ -23,20 +23,31 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:gravity="start">
+            android:gravity="start"
+            android:orientation="horizontal"
+            android:layout_gravity="center_vertical">
             <TextView
-                android:id="@+id/txtPlayerLife"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="LIFE: ❤❤❤❤❤"
+                android:text="@string/life_label"
                 android:textColor="#FF2222"
-                android:textSize="18sp" />
+                android:textStyle="bold"
+                android:layout_marginEnd="10dp"/>
+            <ProgressBar
+                android:id="@+id/playerLifeBar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="150dp"
+                android:layout_height="15dp"
+                android:max="100"
+                android:progress="100"
+                android:progressTint="#FF2222"/>
         </LinearLayout>
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:gravity="center"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:layout_gravity="center_vertical">
             <TextView
                 android:id="@+id/txtEnemyName"
                 android:layout_width="wrap_content"
@@ -50,8 +61,8 @@
                 style="?android:attr/progressBarStyleHorizontal"
                 android:layout_width="300dp"
                 android:layout_height="15dp"
-                android:max="100"
-                android:progress="100" />
+                android:max="400"
+                android:progress="400" />
         </LinearLayout>
     </LinearLayout>
 
@@ -95,9 +106,10 @@
             android:textSize="24sp"
             android:layout_marginBottom="20dp"/>
         <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal">
-            <Button android:id="@+id/btnSelectDragon" android:layout_width="180dp" android:layout_height="wrap_content" android:text="@string/enemy_dragon" android:layout_margin="10dp"/>
-            <Button android:id="@+id/btnSelectGolem" android:layout_width="180dp" android:layout_height="wrap_content" android:text="@string/enemy_golem" android:layout_margin="10dp"/>
-            <Button android:id="@+id/btnSelectBeholder" android:layout_width="180dp" android:layout_height="wrap_content" android:text="@string/enemy_beholder" android:layout_margin="10dp"/>
+            <Button android:id="@+id/btnSelectDragon" android:layout_width="140dp" android:layout_height="wrap_content" android:text="@string/enemy_dragon" android:layout_margin="5dp"/>
+            <Button android:id="@+id/btnSelectGolem" android:layout_width="140dp" android:layout_height="wrap_content" android:text="@string/enemy_golem" android:layout_margin="5dp"/>
+            <Button android:id="@+id/btnSelectBeholder" android:layout_width="140dp" android:layout_height="wrap_content" android:text="@string/enemy_beholder" android:layout_margin="5dp"/>
+            <Button android:id="@+id/btnSelectGryphon" android:layout_width="140dp" android:layout_height="wrap_content" android:text="@string/enemy_gryphon" android:layout_margin="5dp"/>
         </LinearLayout>
         <Button android:id="@+id/btnSelectDemonKing" android:layout_width="250dp" android:layout_height="wrap_content" android:text="@string/enemy_demon_king" android:visibility="gone" android:layout_marginTop="20dp"/>
     </LinearLayout>
@@ -123,21 +135,17 @@
         <Button android:id="@+id/btnSkillHadoken" android:layout_width="300dp" android:layout_height="wrap_content" android:text="@string/learned_hadoken" android:layout_margin="5dp"/>
     </LinearLayout>
 
-    <!-- 操作パネル (白猫風バーチャルパッド) -->
+    <!-- 操作パネル -->
     <RelativeLayout
         android:id="@+id/controllerLayout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="gone">
-
-        <!-- 左半分どこでも反応するジョイスティック -->
         <com.fukutata.sword.JoystickView
             android:id="@+id/joystickView"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:layout_toStartOf="@+id/buttonArea" />
-
-        <!-- 攻撃・防御ボタンエリア -->
         <LinearLayout
             android:id="@+id/buttonArea"
             android:layout_width="wrap_content"
@@ -146,8 +154,6 @@
             android:layout_alignParentEnd="true"
             android:layout_margin="30dp"
             android:gravity="center">
-
-            <Button android:id="@+id/btnGuard" android:text="防御" android:layout_width="85dp" android:layout_height="85dp" android:backgroundTint="#55BB55" android:layout_marginEnd="15dp"/>
             <Button android:id="@+id/btnLight" android:text="弱" android:layout_width="85dp" android:layout_height="85dp" android:backgroundTint="#4444BB" android:layout_marginEnd="15dp"/>
             <Button android:id="@+id/btnHeavy" android:text="強" android:layout_width="85dp" android:layout_height="85dp" android:backgroundTint="#BB4444"/>
         </LinearLayout>

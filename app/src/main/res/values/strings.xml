@@ -6,9 +6,10 @@
     <string name="enemy_dragon">DRAGON</string>
     <string name="enemy_golem">GOLEM</string>
     <string name="enemy_beholder">BEHOLDER</string>
+    <string name="enemy_gryphon">GRYPHON</string>
     <string name="enemy_demon_king">DEMON KING</string>
     <string name="hp_label">HP</string>
-    <string name="life_label">LIFE: %1$s</string>
+    <string name="life_label">LIFE</string>
     <string name="victory">VICTORY!</string>
     <string name="game_over">GAME OVER</string>
     <string name="game_clear">GAME CLEAR!</string>
@@ -25,4 +26,5 @@
     <string name="learned_dive_attack">LEARNED: DIVE ATTACK!</string>
     <string name="learned_hadoken">LEARNED: WAVE SWORD!</string>
     <string name="back_to_title">TO TITLE</string>
+    <string name="next_stage">NEXT</string>
 </resources>

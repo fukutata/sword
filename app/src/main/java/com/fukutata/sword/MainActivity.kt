@@ -13,8 +13,8 @@ import java.util.*
 class MainActivity : AppCompatActivity() {
     private lateinit var gameView: GameView
     private lateinit var enemyHP: ProgressBar
+    private lateinit var playerLifeBar: ProgressBar
     private lateinit var txtResult: TextView
-    private lateinit var txtLife: TextView
     private lateinit var txtEnemyName: TextView
     private lateinit var resultLayout: View
     private lateinit var titleLayout: View
@@ -28,13 +28,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnDragon: Button
     private lateinit var btnGolem: Button
     private lateinit var btnBeholder: Button
+    private lateinit var btnGryphon: Button
     private lateinit var btnDemonKing: Button
 
     private val handler = Handler(Looper.getMainLooper())
     private var enemyTimer: Timer? = null
     private val defeatedEnemies = mutableSetOf<EnemyType>()
 
-    private var mediaPlayer: MediaPlayer? = null
+    private val bgm = BgmSynthesizer()
     private var sePlayer: MediaPlayer? = null
 
     private var lastInput = ""
@@ -43,6 +44,13 @@ class MainActivity : AppCompatActivity() {
     private var guardStartTime: Long = 0
     private val guardBreakLimit = 3000L // 3秒
 
+    // コンボ管理用：「タ(弱)・タ(弱)・ターン(強)」のリズム
+    private var comboStep = 0
+    private var lastAttackTime = 0L
+    private val comboIntervalMax = 800L
+    private val finisherIntervalMin = 100L
+    private val finisherIntervalMax = 1500L
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,8 +58,8 @@ class MainActivity : AppCompatActivity() {
 
         gameView = findViewById(R.id.gameView)
         enemyHP = findViewById(R.id.enemyHP)
+        playerLifeBar = findViewById(R.id.playerLifeBar)
         txtResult = findViewById(R.id.txtResult)
-        txtLife = findViewById(R.id.txtPlayerLife)
         txtEnemyName = findViewById(R.id.txtEnemyName)
         resultLayout = findViewById(R.id.resultLayout)
         titleLayout = findViewById(R.id.titleLayout)
@@ -65,6 +73,7 @@ class MainActivity : AppCompatActivity() {
         btnDragon = findViewById(R.id.btnSelectDragon)
         btnGolem = findViewById(R.id.btnSelectGolem)
         btnBeholder = findViewById(R.id.btnSelectBeholder)
+        btnGryphon = findViewById(R.id.btnSelectGryphon)
         btnDemonKing = findViewById(R.id.btnSelectDemonKing)
 
         findViewById<Button>(R.id.btnStart).setOnClickListener {
@@ -75,6 +84,7 @@ class MainActivity : AppCompatActivity() {
         btnDragon.setOnClickListener { startStage(EnemyType.DRAGON) }
         btnGolem.setOnClickListener { startStage(EnemyType.GOLEM) }
         btnBeholder.setOnClickListener { startStage(EnemyType.BEHOLDER) }
+        btnGryphon.setOnClickListener { startStage(EnemyType.GRYPHON) }
         btnDemonKing.setOnClickListener { startStage(EnemyType.DEMON_KING) }
 
         setupJoystick()
@@ -86,29 +96,13 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnLight).setOnClickListener { performAttack(false) }
         findViewById<Button>(R.id.btnHeavy).setOnClickListener { performAttack(true) }
         
-        findViewById<Button>(R.id.btnGuard).setOnTouchListener { _, event ->
-            if (gameView.isGameOver || gameView.isReadyGo || gameView.isBossEntering) return@setOnTouchListener false
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    if (gameView.playerState == PlayerState.IDLE) {
-                        gameView.playerState = PlayerState.GUARD
-                        guardStartTime = System.currentTimeMillis()
-                        startGuardMonitor()
-                    }
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    if (gameView.playerState == PlayerState.GUARD) {
-                        gameView.playerState = PlayerState.IDLE
-                        guardStartTime = 0
-                    }
-                }
-            }
-            true
-        }
-        
         btnRetry.setOnClickListener {
-            if (txtResult.text == getString(R.string.ending_message)) {
-                recreate() 
+            val currentResult = txtResult.text.toString()
+            if (currentResult.contains("THANK YOU") || currentResult.contains("平和になった")) {
+                recreate()
+            } else if (currentResult.contains("勝利") || currentResult.contains("WIN") || currentResult.contains("習得") || currentResult.contains("次へ") || currentResult.contains("NEXT")) {
+                resultLayout.visibility = View.GONE
+                showSelectionScreen()
             } else if (gameView.playerLife <= 0) {
                 restartCurrentStage()
             } else {
@@ -139,10 +133,32 @@ class MainActivity : AppCompatActivity() {
         joystickView.onMoveListener = { x, y ->
             gameView.inputX = x
             gameView.inputY = y
-            gameView.isDownPressed = y > 0.5f
-            if (y < -0.7f) gameView.startJump()
+            
+            // 下入力判定
+            gameView.isDownPressed = y > 0.4f
+            
+            // オートガード・しゃがみ状態制御
+            if (!gameView.isGameOver && gameView.playerState != PlayerState.JUMPING && 
+                gameView.playerState != PlayerState.LIGHT_ATTACK && gameView.playerState != PlayerState.HEAVY_ATTACK &&
+                gameView.playerState != PlayerState.THROWN) {
+                
+                if (y > 0.6f) {
+                    gameView.playerState = PlayerState.CROUCH
+                } else if ((x < -0.5f && gameView.playerX < gameView.enemyX) || (x > 0.5f && gameView.playerX > gameView.enemyX)) {
+                    if (gameView.playerState != PlayerState.GUARD) {
+                        gameView.playerState = PlayerState.GUARD
+                        guardStartTime = System.currentTimeMillis()
+                        startGuardMonitor()
+                    }
+                } else {
+                    gameView.playerState = PlayerState.IDLE
+                    guardStartTime = 0
+                }
+            }
+
+            if (y < -0.4f) gameView.startJump()
             if (Math.abs(x) > 0.5f || Math.abs(y) > 0.5f) {
-                val dir = if (y < -0.5f) "U" else if (y > 0.5f) "D" else if (x < -0.5f) "L" else "R"
+                val dir = if (y < -0.4f) "U" else if (y > 0.4f) "D" else if (x < -0.5f) "L" else "R"
                 recordInput(dir)
             }
         }
@@ -162,13 +178,14 @@ class MainActivity : AppCompatActivity() {
         gameView.visibility = View.GONE
         uiContainer.visibility = View.GONE
         controllerLayout.visibility = View.GONE
-        stopBGM()
+        bgm.stop()
 
         updateSelectButton(btnDragon, EnemyType.DRAGON, R.string.enemy_dragon)
         updateSelectButton(btnGolem, EnemyType.GOLEM, R.string.enemy_golem)
         updateSelectButton(btnBeholder, EnemyType.BEHOLDER, R.string.enemy_beholder)
+        updateSelectButton(btnGryphon, EnemyType.GRYPHON, R.string.enemy_gryphon)
 
-        if (defeatedEnemies.size >= 3) {
+        if (defeatedEnemies.size >= 4) {
             btnDemonKing.visibility = View.VISIBLE
             updateSelectButton(btnDemonKing, EnemyType.DEMON_KING, R.string.enemy_demon_king)
         }
@@ -191,15 +208,16 @@ class MainActivity : AppCompatActivity() {
             EnemyType.DRAGON -> R.string.enemy_dragon
             EnemyType.GOLEM -> R.string.enemy_golem
             EnemyType.BEHOLDER -> R.string.enemy_beholder
+            EnemyType.GRYPHON -> R.string.enemy_gryphon
             EnemyType.DEMON_KING -> R.string.enemy_demon_king
         }
         txtEnemyName.text = getString(nameRes)
         
         gameView.reset(type)
-        enemyHP.progress = 100
+        enemyHP.progress = 400
         updateLifeUI()
         startEnemyAI()
-        playBGM(type == EnemyType.DEMON_KING)
+        bgm.start(type == EnemyType.DEMON_KING)
     }
 
     private fun startEnemyAI() {
@@ -216,18 +234,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateLifeUI() {
-        val hearts = "❤".repeat(gameView.playerLife.coerceAtLeast(0))
-        txtLife.text = getString(R.string.life_label, hearts)
+        playerLifeBar.progress = gameView.playerLife.toInt()
     }
 
     private fun performAttack(isHeavy: Boolean) {
         if (gameView.isGameOver || gameView.playerState == PlayerState.RECOVERY || 
             gameView.playerState == PlayerState.THROWN || gameView.isBossEntering || gameView.isReadyGo) return
 
+        val now = System.currentTimeMillis()
+        val interval = now - lastAttackTime
+        
         if (gameView.canHadoken && lastInput.endsWith("DR")) {
             gameView.fireHadoken()
-            applyDamage(15)
-            gameView.showDamage(15)
+            applyDamage(25)
+            gameView.showDamage(25)
             lastInput = ""
             return
         }
@@ -238,8 +258,8 @@ class MainActivity : AppCompatActivity() {
                 override fun run() {
                     if (gameView.playerState == PlayerState.DIVE_ATTACK) {
                         if (gameView.checkHit(PlayerState.DIVE_ATTACK)) {
-                            applyDamage(45)
-                            gameView.showDamage(45)
+                            applyDamage(60)
+                            gameView.showDamage(60)
                         }
                         handler.postDelayed(this, 100)
                     }
@@ -249,16 +269,43 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (gameView.playerState != PlayerState.IDLE) return
-        val damage = if (isHeavy) 25 else 10
+        if (gameView.playerState != PlayerState.IDLE && gameView.playerState != PlayerState.CROUCH && gameView.playerState != PlayerState.GUARD) return
+
+        var damage = if (isHeavy) 30 else 15
+        var isFinisher = false
+
+        if (!isHeavy) {
+            if (comboStep == 0) {
+                comboStep = 1
+            } else if (comboStep == 1 && interval < comboIntervalMax) {
+                comboStep = 2 
+            } else {
+                comboStep = 1
+            }
+        } else {
+            if (comboStep == 2 && interval in finisherIntervalMin..finisherIntervalMax) {
+                damage = 120 
+                isFinisher = true
+            }
+            comboStep = 0
+        }
+        
+        lastAttackTime = now
+
         gameView.playerState = if (isHeavy) PlayerState.HEAVY_ATTACK else PlayerState.LIGHT_ATTACK
         handler.postDelayed({
             if (gameView.checkHit(gameView.playerState)) {
                 applyDamage(damage)
                 gameView.showDamage(damage)
+                if (isFinisher) {
+                    gameView.showComboEffect() 
+                }
             }
-        }, if (isHeavy) 300L else 100L)
-        handler.postDelayed({ if (!gameView.isGameOver && gameView.playerState != PlayerState.THROWN) gameView.playerState = PlayerState.IDLE }, if (isHeavy) 800L else 400L)
+        }, if (isHeavy) 250L else 100L)
+        
+        handler.postDelayed({ 
+            if (!gameView.isGameOver && gameView.playerState != PlayerState.THROWN) gameView.playerState = PlayerState.IDLE 
+        }, if (isHeavy) 700L else 350L)
     }
 
     private fun applyDamage(amount: Int) {
@@ -277,14 +324,22 @@ class MainActivity : AppCompatActivity() {
         val isFinal = gameView.currentEnemy == EnemyType.DEMON_KING
         
         handler.postDelayed({
-            controllerLayout.visibility = View.GONE // パッドを隠す
+            controllerLayout.visibility = View.GONE
+            val learnedCount = (if(gameView.canDoubleJump) 1 else 0) + (if(gameView.canDiveAttack) 1 else 0) + (if(gameView.canHadoken) 1 else 0)
+            
             if (isFinal) {
                 txtResult.text = getString(R.string.ending_message)
+                btnRetry.text = getString(R.string.back_to_title)
                 resultLayout.visibility = View.VISIBLE
-            } else {
+            } else if (learnedCount < 3) {
                 showSkillSelect()
+            } else {
+                // 技を全部覚えた後、または4匹目撃破時
+                txtResult.text = getString(R.string.victory)
+                btnRetry.text = getString(R.string.next_stage)
+                resultLayout.visibility = View.VISIBLE
             }
-            stopBGM()
+            bgm.stop()
         }, 3000)
     }
 
@@ -299,48 +354,33 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun learnSkill(type: Int) {
-        when(type) {
-            1 -> gameView.canDoubleJump = true
-            2 -> gameView.canDiveAttack = true
-            3 -> gameView.canHadoken = true
+        val msg = when(type) {
+            1 -> { gameView.canDoubleJump = true; "2段ジャンプ習得！\n【出し方：空中でもう一度 ↑】" }
+            2 -> { gameView.canDiveAttack = true; "カブト斬り習得！\n【出し方：空中ジャンプ中に ↓ ＋ 攻撃】" }
+            3 -> { gameView.canHadoken = true; "波動剣習得！\n【出し方：↓ → ＋ 攻撃】" }
+            else -> ""
         }
         skillSelectLayout.visibility = View.GONE
-        showSelectionScreen()
+        txtResult.text = msg
+        btnRetry.text = getString(R.string.next_stage)
+        resultLayout.visibility = View.VISIBLE
     }
 
     private fun checkGameOver() {
         if (gameView.playerLife <= 0) {
             enemyTimer?.cancel()
+            gameView.gameResultMessage = "LOSE"
             controllerLayout.visibility = View.GONE
             txtResult.text = getString(R.string.game_over)
             btnRetry.text = getString(R.string.retry)
             resultLayout.visibility = View.VISIBLE
-            stopBGM()
+            bgm.stop()
         }
     }
 
     private fun restartCurrentStage() {
         resultLayout.visibility = View.GONE
         startStage(gameView.currentEnemy)
-    }
-
-    private fun playBGM(isBoss: Boolean) {
-        try {
-            stopBGM()
-            val uri = if (isBoss) RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-            else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-            mediaPlayer = MediaPlayer()
-            mediaPlayer?.setDataSource(this, uri)
-            mediaPlayer?.isLooping = true
-            mediaPlayer?.prepare()
-            mediaPlayer?.start()
-        } catch (e: Exception) {}
-    }
-
-    private fun stopBGM() {
-        mediaPlayer?.stop()
-        mediaPlayer?.release()
-        mediaPlayer = null
     }
 
     fun playSeHit() {
@@ -364,7 +404,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        stopBGM()
+        bgm.stop()
         sePlayer?.release()
     }
 }
