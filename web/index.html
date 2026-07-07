@@ -276,11 +276,13 @@
     <p class="subtitle">五体の魔物を討ち、伝説の剣士となれ。</p>
     <div class="howto">
       <div><b>操作:</b> 左下スティックで方向入力</div>
-      <div><b>← 後方保持</b> = ガード / <b>↓ 長押し</b> = しゃがみ / <b>↑</b> = ジャンプ</div>
-      <div><b>LIGHT連打→HEAVY</b> でフィニッシュコンボ</div>
+      <div><b>← → 軽く倒す</b> = 歩く（敵に近づく/離れる） / <b>← 目一杯倒す</b> = ガード</div>
+      <div><b>↓ 長押し</b> = しゃがみ / <b>↑</b> = ジャンプ（空中でも左右に動ける）</div>
+      <div>ジャンプで<b>敵の頭に着地</b>できる。乗ったまま歩き回ったり飛び降りたりできる</div>
+      <div><b>LIGHT連打→HEAVY</b> でフィニッシュコンボ（攻撃は敵に近づかないと当たらない）</div>
       <div><b>↓→+攻撃</b> = 波動剣（要習得） / <b>空中で↓+攻撃</b> = カブト斬り（要習得）</div>
       <div>敵の頭上の指示に反応せよ：<b>GUARD</b>=ガード可 / <b>JUMP!</b>=跳べ / <b>CROUCH!</b>=しゃがめ</div>
-      <div>敵を倒す前に<b>TIME</b>が0になると敗北。<b>宝箱</b>はHEAVYで壊せる</div>
+      <div>敵を倒す前に<b>TIME</b>が0になると敗北。<b>宝箱</b>は近づいてHEAVYで壊せる</div>
     </div>
     <div class="profile-strip">
       <span><span class="lv" id="titleLvTitle">Lv.1 SOLDIER</span></span>
@@ -351,8 +353,16 @@ const COMBO_INTERVAL_MAX = 800;
 const FINISHER_MIN = 100;
 const FINISHER_MAX = 1500;
 const GUARD_BREAK_LIMIT = 3000;
-const JUMP_DURATION = 520;
-const DOUBLE_JUMP_EXTRA = 380;
+const ENEMY_X = 0.78;
+const ENEMY_HALF_WIDTH = 0.1;
+const ENEMY_HEAD_HEIGHT = 0.30;
+const WALK_SPEED = 0.55;
+const AIR_CONTROL = 0.55;
+const GRAVITY = 7.2;
+const JUMP_V0 = 1.5;
+const DOUBLE_JUMP_V0 = 1.3;
+const MELEE_RANGE = 0.17;
+const HADOKEN_SPEED = 0.9;
 
 /* ============ DOM ============ */
 const $ = (id) => document.getElementById(id);
@@ -476,12 +486,17 @@ function runScheduler(now){
 
 const player = {
   state:"IDLE", life:PLAYER_MAX_HP,
+  x:0.22, height:0, vy:0, grounded:true,
   guardStart:0, comboStep:0, lastAttackTime:0, lastAttackHeavy:false,
   canDoubleJump:false, canDiveAttack:false, canHadoken:false,
-  jumpEndAt:0, usedDoubleJump:false,
+  usedDoubleJump:false,
   diveHits:0,
   hitFlashUntil:0, knockUntil:0, dying:false, dieStart:0,
 };
+function floorHeightAt(xFrac){
+  if(enemy.dying) return 0;
+  return Math.abs(xFrac-ENEMY_X)<ENEMY_HALF_WIDTH ? ENEMY_HEAD_HEIGHT : 0;
+}
 const enemy = {
   type:"DRAGON", hp:400, maxHp:400, phase:"cooldown", attackType:null, phaseStart:0, nextCycle:0,
   hitFlashUntil:0, knockUntil:0, dying:false, dieStart:0, lastStrikeAt:0,
@@ -581,6 +596,7 @@ function startStage(type){
   enemy.hitFlashUntil=0; enemy.knockUntil=0; enemy.dying=false; enemy.lastStrikeAt=0;
   player.life = playerMaxHp(); player.state="IDLE"; player.comboStep=0; player.guardStart=0;
   player.usedDoubleJump=false;
+  player.x=0.22; player.height=0; player.vy=0; player.grounded=true;
   player.hitFlashUntil=0; player.knockUntil=0; player.dying=false;
   popups.length=0; particles.length=0; hadoken=null;
   timeLeft = ENEMIES[type].time;
@@ -647,7 +663,7 @@ function performAttack(isHeavy){
   const interval = now - player.lastAttackTime;
 
   if(player.canHadoken && !isHeavy && inputBuffer.endsWith("DR") && !hadoken){
-    hadoken = { x:0.30, born:now };
+    hadoken = { x:player.x, startX:player.x, born:now };
     inputBuffer = "";
     SE.hit();
     return;
@@ -657,7 +673,9 @@ function performAttack(isHeavy){
     const tick = ()=>{
       if(player.state!=="DIVE_ATTACK") return;
       player.diveHits++;
-      applyDamageToEnemy(60); addPopup(0.72,0.4,"60","#f0b429"); SE.bigHit();
+      if(Math.abs(player.x-ENEMY_X)<MELEE_RANGE){
+        applyDamageToEnemy(60); addPopup(0.72,0.4,"60","#f0b429"); SE.bigHit();
+      }
       if(player.diveHits<3) after(120, tick);
       else after(160, ()=>{ if(player.state==="DIVE_ATTACK") player.state="IDLE"; });
     };
@@ -666,7 +684,7 @@ function performAttack(isHeavy){
   }
   if(player.state!=="IDLE" && player.state!=="CROUCH" && player.state!=="GUARD") return;
 
-  if(isHeavy && chest && chest.alive) breakChest();
+  if(isHeavy && chest && chest.alive && Math.abs(player.x-chest.x)<MELEE_RANGE) breakChest();
 
   let damage = isHeavy? 30:15;
   let isFinisher=false;
@@ -684,35 +702,72 @@ function performAttack(isHeavy){
   const confirmedState = player.state;
   after(isHeavy?250:100, ()=>{
     if(player.state===confirmedState){
-      applyDamageToEnemy(damage);
-      addPopup(0.72,0.4,String(damage), isFinisher?"#f0b429":"#eef1f8");
-      isFinisher? SE.bigHit() : SE.hit();
+      if(Math.abs(player.x-ENEMY_X)<MELEE_RANGE){
+        applyDamageToEnemy(damage);
+        addPopup(0.72,0.4,String(damage), isFinisher?"#f0b429":"#eef1f8");
+        isFinisher? SE.bigHit() : SE.hit();
+      } else {
+        addPopup(player.x, 0.42, "MISS", "#8892b0");
+      }
     }
   });
   after(isHeavy?700:350, ()=>{ if(player.state!=="THROWN" && screen==="BATTLE") player.state="IDLE"; });
 }
 
 function startJump(){
-  if(player.state==="JUMPING") return;
-  player.state="JUMPING"; player.jumpEndAt = performance.now()+JUMP_DURATION; player.usedDoubleJump=false;
+  if(!player.grounded) return;
+  player.grounded=false; player.vy=JUMP_V0; player.usedDoubleJump=false;
+  player.state="JUMPING";
 }
 
-function updateStance(now){
-  if(UNINTERRUPTIBLE.has(player.state)) return;
+function updateStance(now, dt){
   const x=input.x, y=input.y;
+
+  // free horizontal movement while neutral or airborne (walk toward/away, or drift mid-air)
+  if(player.state==="IDLE" || player.state==="JUMPING" || player.state==="DIVE_ATTACK"){
+    if(Math.abs(x)>0.12){
+      const speed = player.grounded ? WALK_SPEED : WALK_SPEED*AIR_CONTROL;
+      let nx = player.x + (x>0?1:-1)*speed*dt;
+      const maxX = ENEMY_X+ENEMY_HALF_WIDTH+0.03;
+      nx = Math.max(0.04, Math.min(maxX, nx));
+      const wall = ENEMY_X-ENEMY_HALF_WIDTH-0.02;
+      if(player.grounded && floorHeightAt(player.x)===0 && nx>wall){
+        nx = Math.min(nx, wall);
+      }
+      player.x = nx;
+    }
+  }
+
+  if(Math.abs(x)>0.5 || Math.abs(y)>0.5){
+    const dir = y<-0.4? "U" : y>0.4? "D" : x<-0.5? "L" : "R";
+    recordInput(dir, now);
+  }
+
+  if(UNINTERRUPTIBLE.has(player.state)) return;
+
   if(y>0.6){ player.state="CROUCH"; player.guardStart=0; }
-  else if(x<-0.5){
+  else if(x<-0.72){
     if(player.state!=="GUARD"){ player.state="GUARD"; player.guardStart=now; }
   } else {
     if(player.state!=="IDLE"){ player.state="IDLE"; }
     player.guardStart=0;
   }
-  if(y<-0.4){
-    if(player.state!=="JUMPING") startJump();
+  if(y<-0.4) startJump();
+}
+
+function updatePlayerPhysics(dt){
+  const floor = floorHeightAt(player.x);
+  if(player.grounded){
+    if(player.height > floor+0.001){ player.grounded=false; player.vy=0; }
+    else player.height = floor;
   }
-  if(Math.abs(x)>0.5 || Math.abs(y)>0.5){
-    const dir = y<-0.4? "U" : y>0.4? "D" : x<-0.5? "L" : "R";
-    recordInput(dir, now);
+  if(!player.grounded){
+    player.vy -= GRAVITY*dt;
+    player.height += player.vy*dt;
+    if(player.height<=floor){
+      player.height = floor; player.vy = 0; player.grounded = true; player.usedDoubleJump=false;
+      if(player.state==="JUMPING"||player.state==="DIVE_ATTACK") player.state="IDLE";
+    }
   }
 }
 
@@ -1167,13 +1222,9 @@ function render(now){
       if(now<player.knockUntil){ pKnock = -((player.knockUntil-now)/220)*W*0.035; }
       if(now<player.hitFlashUntil){ pFlash = (player.hitFlashUntil-now)/160; }
     }
-    let pY = groundY;
-    if((player.state==="JUMPING"||player.state==="DIVE_ATTACK") && !player.dying){
-      const prog = Math.min(1,(player.jumpEndAt-now)/JUMP_DURATION);
-      pY = groundY - Math.sin(Math.max(0,prog)*Math.PI)*H*0.22;
-    }
-    const pX = W*0.22 + pLunge + pKnock;
-    drawShadow(ctx, W*0.22, groundY, pW, (groundY-pY)/H);
+    let pY = groundY - player.height*H;
+    const pX = W*player.x + pLunge + pKnock;
+    drawShadow(ctx, W*player.x, groundY, pW, player.height);
     pY += pBob + pSink;
     drawFighter(ctx, pX, pY, pW, pH, "#f0b429", player.state, 1, {flash:pFlash, rotation:pRot, alpha:pAlpha});
 
@@ -1196,10 +1247,10 @@ function render(now){
       if(now<enemy.knockUntil){ eKnock = ((enemy.knockUntil-now)/220)*W*0.035; }
       if(now<enemy.hitFlashUntil){ eFlash = (enemy.hitFlashUntil-now)/160; }
     }
-    const eX = W*0.78 + eLunge + eKnock;
+    const eX = W*ENEMY_X + eLunge + eKnock;
     const eY = groundY + eSink;
     const glow = (!enemy.dying && enemy.phase==="telegraph") ? TELEGRAPH_LABEL[enemy.attackType].c : null;
-    drawShadow(ctx, W*0.78, groundY, eW, 0);
+    drawShadow(ctx, W*ENEMY_X, groundY, eW, 0);
     drawEnemyBody(ctx, eX, eY, eW, eH, enemy.type, cfg.color, glow, {flash:eFlash, rotation:eRot, alpha:eAlpha, scale:eScale, t:now});
 
     if(!enemy.dying && enemy.phase==="telegraph"){
@@ -1217,11 +1268,11 @@ function render(now){
 
     if(hadoken){
       const age = now-hadoken.born;
-      hadoken.x = 0.30 + age/600*0.44;
+      hadoken.x = hadoken.startX + (age/1000)*HADOKEN_SPEED;
       ctx.fillStyle="#3ddad7"; ctx.shadowColor="#3ddad7"; ctx.shadowBlur=10;
       ctx.beginPath(); ctx.arc(W*hadoken.x, groundY-pH*0.55, W*0.018, 0, Math.PI*2); ctx.fill();
       ctx.shadowBlur=0;
-      if(hadoken.x>=0.74){
+      if(hadoken.x>=ENEMY_X-ENEMY_HALF_WIDTH){
         applyDamageToEnemy(25); addPopup(0.72,0.4,"25","#3ddad7"); SE.hit();
         hadoken=null;
       }
@@ -1264,10 +1315,11 @@ function loop(){
   lastLoopTime = now;
   runScheduler(now);
   if(screen==="BATTLE"){
-    updateStance(now);
+    updateStance(now, dt);
+    updatePlayerPhysics(dt);
     const upPressed = input.y<-0.4;
-    if(player.state==="JUMPING" && player.canDoubleJump && !player.usedDoubleJump && upPressed && !prevUp){
-      player.jumpEndAt += DOUBLE_JUMP_EXTRA;
+    if(!player.grounded && player.canDoubleJump && !player.usedDoubleJump && upPressed && !prevUp){
+      player.vy = DOUBLE_JUMP_V0;
       player.usedDoubleJump = true;
       SE.select();
     }
@@ -1277,7 +1329,6 @@ function loop(){
       player.state="RECOVERY"; player.guardStart=0;
       after(700, ()=>{ if(player.state==="RECOVERY") player.state="IDLE"; });
     }
-    if(player.state==="JUMPING" && now>=player.jumpEndAt){ player.state="IDLE"; }
     if(chest && !chest.alive && now-chest.brokenAt>700){ chest=null; }
     timeLeft = Math.max(0, timeLeft-dt);
     timeLeftEl.textContent = Math.ceil(timeLeft);
