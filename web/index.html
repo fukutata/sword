@@ -1,0 +1,855 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>SWORD OF LEGEND</title>
+<style>
+  :root{
+    --ink:#0b0e17;
+    --panel:#141a2b;
+    --line:#2a3350;
+    --gold:#f0b429;
+    --ember:#e8433f;
+    --aqua:#3ddad7;
+    --text:#eef1f8;
+    --muted:#8892b0;
+    --font-display: ui-monospace, "SFMono-Regular", "Cascadia Code", "Courier New", monospace;
+    --font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:var(--ink); color:var(--text);
+    font-family:var(--font-body);
+    overscroll-behavior:none;
+    -webkit-user-select:none; user-select:none;
+  }
+  body{
+    display:flex; align-items:center; justify-content:center;
+    min-height:100vh; min-height:100dvh;
+    padding:10px;
+  }
+  .pixel-text{
+    font-family:var(--font-display);
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    text-shadow:2px 2px 0 var(--line);
+  }
+  #cabinet{
+    position:relative;
+    width:min(94vw, 860px);
+    aspect-ratio:16/10;
+    background:var(--panel);
+    border:3px solid var(--line);
+    box-shadow:0 0 0 6px var(--ink), 8px 8px 0 rgba(0,0,0,.55);
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+  }
+  #cabinet::after{
+    content:"";
+    position:absolute; inset:0;
+    pointer-events:none;
+    background:repeating-linear-gradient(
+      to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
+      rgba(0,0,0,.12) 3px, rgba(0,0,0,0) 4px
+    );
+    mix-blend-mode:multiply;
+    z-index:50;
+  }
+  @media (prefers-reduced-motion: reduce){
+    #cabinet::after{ display:none; }
+  }
+
+  /* ---- HUD ---- */
+  #hud{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:14px;
+    padding:10px 14px 6px;
+    flex:0 0 auto;
+  }
+  .hud-side{ display:flex; flex-direction:column; gap:4px; }
+  .hud-side.enemy{ align-items:flex-start; }
+  .hud-side.player{ align-items:flex-end; }
+  .hud-name{ font-size:13px; color:var(--muted); }
+  .hud-name b{ color:var(--text); }
+  .bar{
+    width:100%; height:14px;
+    background:#05070c;
+    border:2px solid var(--line);
+    position:relative;
+  }
+  .bar__fill{
+    position:absolute; top:0; left:0; bottom:0;
+    width:100%;
+    transition:width .12s steps(6);
+  }
+  .bar--enemy .bar__fill{ background:var(--ember); right:0; left:auto; }
+  .bar--player .bar__fill{ background:var(--aqua); }
+  .bar::before{
+    content:""; position:absolute; inset:0;
+    background:repeating-linear-gradient(to right, transparent 0 calc(100%/8 - 2px), var(--line) calc(100%/8 - 2px) calc(100%/8));
+    pointer-events:none;
+  }
+
+  /* ---- Canvas ---- */
+  #canvasWrap{ position:relative; flex:1 1 auto; min-height:0; }
+  #battle{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+  /* ---- Dock (controls) ---- */
+  #dock{
+    flex:0 0 auto;
+    display:grid;
+    grid-template-columns:1fr auto;
+    align-items:end;
+    gap:12px;
+    padding:10px 16px 16px;
+  }
+  #stickZone{
+    position:relative;
+    width:150px; height:150px;
+    touch-action:none;
+  }
+  #stickBase{
+    position:absolute; left:50%; top:50%;
+    width:120px; height:120px;
+    margin:-60px 0 0 -60px;
+    border:2px solid rgba(255,255,255,.28);
+    border-radius:50%;
+    background:rgba(255,255,255,.04);
+  }
+  #stickKnob{
+    position:absolute; left:50%; top:50%;
+    width:56px; height:56px;
+    margin:-28px 0 0 -28px;
+    border-radius:50%;
+    background:rgba(240,180,41,.55);
+    border:2px solid var(--gold);
+    transform:translate(0,0);
+    pointer-events:none;
+  }
+  .atk-buttons{ display:flex; gap:12px; }
+  .btn-atk{
+    width:78px; height:78px;
+    font-family:var(--font-display);
+    font-size:14px;
+    letter-spacing:.05em;
+    color:var(--ink);
+    border:2px solid var(--line);
+    box-shadow:3px 3px 0 rgba(0,0,0,.5);
+    touch-action:none;
+  }
+  .btn-atk:active{ transform:translate(2px,2px); box-shadow:1px 1px 0 rgba(0,0,0,.5); }
+  #btnLight{ background:var(--gold); }
+  #btnHeavy{ background:var(--ember); color:var(--text); }
+
+  /* ---- Generic buttons ---- */
+  button{
+    font-family:var(--font-display);
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    background:var(--panel);
+    color:var(--text);
+    border:2px solid var(--line);
+    padding:12px 18px;
+    cursor:pointer;
+    box-shadow:3px 3px 0 rgba(0,0,0,.5);
+  }
+  button:hover:not(:disabled){ border-color:var(--gold); }
+  button:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; }
+  button:active:not(:disabled){ transform:translate(2px,2px); box-shadow:1px 1px 0 rgba(0,0,0,.5); }
+  button:disabled{ opacity:.4; cursor:not-allowed; filter:grayscale(.4); }
+  button.primary{ background:var(--gold); color:var(--ink); border-color:#8a6410; }
+
+  /* ---- Overlay screens ---- */
+  .screen{
+    position:absolute; inset:0;
+    z-index:40;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:18px;
+    padding:24px;
+    background:linear-gradient(180deg, rgba(11,14,23,.97), rgba(11,14,23,.99));
+    text-align:center;
+  }
+  .screen[hidden]{ display:none; }
+  .title-h1{ font-size:clamp(22px,5vw,38px); color:var(--gold); text-shadow:3px 3px 0 var(--line), 5px 5px 0 rgba(0,0,0,.5); }
+  .subtitle{ color:var(--muted); font-size:13px; max-width:46ch; line-height:1.6; }
+  .howto{
+    font-family:var(--font-body);
+    font-size:12.5px;
+    color:var(--muted);
+    line-height:1.8;
+    text-align:left;
+    border:2px solid var(--line);
+    padding:12px 16px;
+    max-width:360px;
+  }
+  .howto b{ color:var(--aqua); }
+  .foe-grid{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; max-width:420px; }
+  .foe-grid button{ width:150px; }
+  #resultText{ font-size:clamp(20px,4.4vw,30px); color:var(--gold); white-space:pre-line; line-height:1.5; }
+  .skill-list{ display:flex; flex-direction:column; gap:10px; }
+  .skill-list button{ width:300px; max-width:80vw; text-transform:none; font-family:var(--font-body); font-size:13px; text-align:left; }
+
+  [hidden]{ display:none !important; }
+</style>
+</head>
+<body>
+
+<div id="cabinet">
+
+  <div id="hud" hidden>
+    <div class="hud-side enemy">
+      <div class="hud-name pixel-text">HP <b id="enemyName">DRAGON</b></div>
+      <div class="bar bar--enemy"><div class="bar__fill" id="enemyHpFill"></div></div>
+    </div>
+    <div class="hud-side player">
+      <div class="hud-name pixel-text"><b>YOU</b></div>
+      <div class="bar bar--player"><div class="bar__fill" id="playerHpFill"></div></div>
+    </div>
+  </div>
+
+  <div id="canvasWrap" hidden>
+    <canvas id="battle"></canvas>
+  </div>
+
+  <div id="dock" hidden>
+    <div id="stickZone">
+      <div id="stickBase"></div>
+      <div id="stickKnob"></div>
+    </div>
+    <div class="atk-buttons">
+      <button id="btnLight" class="btn-atk">弱<br>LIGHT</button>
+      <button id="btnHeavy" class="btn-atk">強<br>HEAVY</button>
+    </div>
+  </div>
+
+  <!-- TITLE -->
+  <section class="screen" id="titleScreen">
+    <h1 class="title-h1 pixel-text">SWORD OF LEGEND</h1>
+    <p class="subtitle">五体の魔物を討ち、伝説の剣士となれ。</p>
+    <div class="howto">
+      <div><b>操作:</b> 左下スティックで方向入力</div>
+      <div><b>← 後方保持</b> = ガード / <b>↓ 長押し</b> = しゃがみ / <b>↑</b> = ジャンプ</div>
+      <div><b>LIGHT連打→HEAVY</b> でフィニッシュコンボ</div>
+      <div><b>↓→+攻撃</b> = 波動剣（要習得） / <b>空中で↓+攻撃</b> = カブト斬り（要習得）</div>
+      <div>敵の頭上の指示に反応せよ：<b>GUARD</b>=ガード可 / <b>JUMP!</b>=跳べ / <b>CROUCH!</b>=しゃがめ</div>
+    </div>
+    <button class="primary" id="btnStart">START</button>
+  </section>
+
+  <!-- SELECT -->
+  <section class="screen" id="selectScreen" hidden>
+    <h2 class="pixel-text" style="color:var(--gold)">SELECT YOUR FOE</h2>
+    <div class="foe-grid">
+      <button data-enemy="DRAGON">DRAGON</button>
+      <button data-enemy="GOLEM">GOLEM</button>
+      <button data-enemy="BEHOLDER">BEHOLDER</button>
+      <button data-enemy="GRYPHON">GRYPHON</button>
+      <button data-enemy="DEMON_KING" id="btnDemonKing" hidden>DEMON KING</button>
+    </div>
+  </section>
+
+  <!-- SKILL SELECT -->
+  <section class="screen" id="skillScreen" hidden>
+    <h2 class="pixel-text" style="color:var(--gold)">CHOOSE A SKILL</h2>
+    <div class="skill-list">
+      <button data-skill="doubleJump">二段ジャンプ ― 空中でもう一度↑</button>
+      <button data-skill="diveAttack">カブト斬り ― 空中で↓＋攻撃</button>
+      <button data-skill="hadoken">波動剣 ― ↓→＋攻撃</button>
+    </div>
+  </section>
+
+  <!-- RESULT -->
+  <section class="screen" id="resultScreen" hidden>
+    <p id="resultText" class="pixel-text"></p>
+    <button class="primary" id="btnRetry">RETRY</button>
+  </section>
+
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ============ CONFIG ============ */
+const ENEMIES = {
+  DRAGON:    { name:"DRAGON",    hp:400, color:"#e8433f", cycle:1750, telegraph:650, dmg:{STRIKE:16, SWEEP:22, SMASH:26} },
+  GOLEM:     { name:"GOLEM",     hp:460, color:"#a9744f", cycle:2100, telegraph:750, dmg:{STRIKE:20, SWEEP:28, SMASH:22} },
+  BEHOLDER:  { name:"BEHOLDER",  hp:380, color:"#8b5cf6", cycle:1500, telegraph:550, dmg:{STRIKE:16, SWEEP:20, SMASH:24} },
+  GRYPHON:   { name:"GRYPHON",   hp:420, color:"#41c9c2", cycle:1600, telegraph:600, dmg:{STRIKE:18, SWEEP:26, SMASH:20} },
+  DEMON_KING:{ name:"DEMON KING",hp:640, color:"#3a1030", cycle:1150, telegraph:480, dmg:{STRIKE:22, SWEEP:30, SMASH:32} },
+};
+const PLAYER_MAX_HP = 400;
+const COMBO_INTERVAL_MAX = 800;
+const FINISHER_MIN = 100;
+const FINISHER_MAX = 1500;
+const GUARD_BREAK_LIMIT = 3000;
+const JUMP_DURATION = 520;
+const DOUBLE_JUMP_EXTRA = 380;
+
+/* ============ DOM ============ */
+const $ = (id) => document.getElementById(id);
+const hud = $("hud"), canvasWrap = $("canvasWrap"), dock = $("dock");
+const enemyName = $("enemyName"), enemyHpFill = $("enemyHpFill"), playerHpFill = $("playerHpFill");
+const canvas = $("battle"); const ctx = canvas.getContext("2d");
+const titleScreen = $("titleScreen"), selectScreen = $("selectScreen"), skillScreen = $("skillScreen"), resultScreen = $("resultScreen");
+const resultText = $("resultText"), btnRetry = $("btnRetry"), btnDemonKing = $("btnDemonKing");
+const stickZone = $("stickZone"), stickKnob = $("stickKnob");
+const btnLight = $("btnLight"), btnHeavy = $("btnHeavy"), btnStart = $("btnStart");
+
+/* ============ AUDIO ============ */
+let actx = null;
+function ensureAudio(){ if(!actx){ actx = new (window.AudioContext||window.webkitAudioContext)(); } if(actx.state==="suspended") actx.resume(); return actx; }
+
+const NOTE_FREQ = {
+  C:261.63,"C#":277.18,D:293.66,Eb:311.13,E:329.63,F:349.23,"F#":369.99,G:392.0,
+  "G#":415.3,A:440.0,Bb:466.16,B:493.88,C2:523.25,"C#2":554.37,D2:587.33,Ab:415.3
+};
+const BgmPlayer = (function(){
+  let timer=null, noteIndex=0, melody=[], noteLen=0;
+  function scheduleNote(){
+    const a = ensureAudio();
+    const freq = NOTE_FREQ[melody[noteIndex % melody.length]] || 440;
+    const t0 = a.currentTime;
+    const osc = a.createOscillator();
+    const gain = a.createGain();
+    osc.type = "square";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.16, t0);
+    gain.gain.linearRampToValueAtTime(0.0001, t0 + noteLen*0.98);
+    osc.connect(gain).connect(a.destination);
+    osc.start(t0);
+    osc.stop(t0 + noteLen);
+    noteIndex++;
+  }
+  return {
+    start(isBoss){
+      this.stop();
+      const bpm = isBoss ? 180 : 140;
+      noteLen = 30/bpm;
+      melody = isBoss
+        ? ["A","Bb","A","G#","A","C2","Bb","A","F","G","Ab","G","F","E","D","E"]
+        : ["D","F","G#","G","D","F","G#","B"];
+      noteIndex = 0;
+      scheduleNote();
+      timer = setInterval(scheduleNote, noteLen*1000);
+    },
+    stop(){ if(timer){ clearInterval(timer); timer=null; } }
+  };
+})();
+function playBlip(freq, dur, type){
+  const a = ensureAudio();
+  const t0 = a.currentTime;
+  const osc = a.createOscillator(); const gain = a.createGain();
+  osc.type = type||"square"; osc.frequency.setValueAtTime(freq, t0);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(40,freq*0.6), t0+dur);
+  gain.gain.setValueAtTime(0.22, t0);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0+dur);
+  osc.connect(gain).connect(a.destination);
+  osc.start(t0); osc.stop(t0+dur);
+}
+const SE = {
+  hit(){ playBlip(520, 0.09, "square"); },
+  bigHit(){ playBlip(300, 0.16, "square"); },
+  damage(){ playBlip(160, 0.22, "sawtooth"); },
+  guard(){ playBlip(700, 0.06, "triangle"); },
+  select(){ playBlip(880, 0.05, "square"); },
+};
+
+/* ============ INPUT ============ */
+const input = { x:0, y:0 };
+let lastDir = "";
+let inputBuffer = ""; let inputBufferTime = 0;
+
+function setupStick(){
+  let active=false, cx=0, cy=0;
+  const radius = 60;
+  function move(clientX, clientY){
+    const rect = stickZone.getBoundingClientRect();
+    cx = rect.left+rect.width/2; cy = rect.top+rect.height/2;
+    let dx = clientX-cx, dy = clientY-cy;
+    const dist = Math.hypot(dx,dy);
+    if(dist>radius){ dx = dx/dist*radius; dy = dy/dist*radius; }
+    stickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+    input.x = dx/radius; input.y = dy/radius;
+  }
+  function reset(){
+    active=false; input.x=0; input.y=0;
+    stickKnob.style.transform = "translate(0,0)";
+  }
+  stickZone.addEventListener("pointerdown", e=>{ active=true; stickZone.setPointerCapture(e.pointerId); move(e.clientX,e.clientY); });
+  stickZone.addEventListener("pointermove", e=>{ if(active) move(e.clientX,e.clientY); });
+  stickZone.addEventListener("pointerup", reset);
+  stickZone.addEventListener("pointercancel", reset);
+}
+function recordInput(dir, now){
+  if(now - inputBufferTime > 500) inputBuffer = "";
+  if(inputBuffer.length===0 || inputBuffer[inputBuffer.length-1]!==dir){
+    inputBuffer += dir; inputBufferTime = now;
+  }
+}
+
+/* ============ GAME STATE ============ */
+const UNINTERRUPTIBLE = new Set(["JUMPING","LIGHT_ATTACK","HEAVY_ATTACK","DIVE_ATTACK","THROWN","RECOVERY"]);
+let screen = "TITLE";
+let defeated = new Set();
+let scheduler = [];
+function after(ms, fn){ scheduler.push({ at: performance.now()+ms, fn }); }
+function clearScheduler(){ scheduler = []; }
+function runScheduler(now){
+  for(let i=scheduler.length-1;i>=0;i--){
+    if(now>=scheduler[i].at){ const job=scheduler[i]; scheduler.splice(i,1); job.fn(); }
+  }
+}
+
+const player = {
+  state:"IDLE", life:PLAYER_MAX_HP,
+  guardStart:0, comboStep:0, lastAttackTime:0,
+  canDoubleJump:false, canDiveAttack:false, canHadoken:false,
+  jumpEndAt:0, usedDoubleJump:false,
+  diveHits:0,
+};
+const enemy = { type:"DRAGON", hp:400, maxHp:400, phase:"cooldown", attackType:null, phaseStart:0, nextCycle:0 };
+const popups = []; // {x,y,text,color,born}
+let hadoken = null; // {x, born}
+
+function setPlayerState(s){ player.state = s; }
+
+function showScreen(name){
+  screen = name;
+  titleScreen.hidden = name!=="TITLE";
+  selectScreen.hidden = name!=="SELECT";
+  skillScreen.hidden = name!=="SKILL";
+  resultScreen.hidden = name!=="RESULT";
+  const battle = name==="BATTLE";
+  hud.hidden = !battle; canvasWrap.hidden = !battle; dock.hidden = !battle;
+}
+
+function skillCount(){ return (player.canDoubleJump?1:0)+(player.canDiveAttack?1:0)+(player.canHadoken?1:0); }
+
+function updateFoeButtons(){
+  document.querySelectorAll("#selectScreen button[data-enemy]").forEach(btn=>{
+    const type = btn.dataset.enemy;
+    if(type==="DEMON_KING") return;
+    const isDead = defeated.has(type);
+    btn.textContent = ENEMIES[type].name + (isDead? " (DEFEATED)" : "");
+    btn.disabled = isDead;
+  });
+  if(defeated.size>=4){ btnDemonKing.hidden=false; }
+}
+
+function startStage(type){
+  clearScheduler();
+  enemy.type = type; enemy.maxHp = ENEMIES[type].hp; enemy.hp = enemy.maxHp;
+  enemy.phase = "cooldown"; enemy.attackType=null; enemy.nextCycle = performance.now()+900;
+  player.life = PLAYER_MAX_HP; player.state="IDLE"; player.comboStep=0; player.guardStart=0;
+  player.usedDoubleJump=false;
+  popups.length=0; hadoken=null;
+  enemyName.textContent = ENEMIES[type].name;
+  updateBars();
+  showScreen("BATTLE");
+  BgmPlayer.start(type==="DEMON_KING");
+}
+
+function updateBars(){
+  enemyHpFill.style.width = Math.max(0, enemy.hp/enemy.maxHp*100) + "%";
+  playerHpFill.style.width = Math.max(0, player.life/PLAYER_MAX_HP*100) + "%";
+}
+
+function addPopup(x,y,text,color){ popups.push({x,y,text,color,born:performance.now()}); }
+
+/* ---- combat ---- */
+function applyDamageToEnemy(amount){
+  enemy.hp = Math.max(0, enemy.hp-amount);
+  updateBars();
+  if(enemy.hp<=0){ onVictory(); }
+}
+function applyDamageToPlayer(amount){
+  if(amount<=0) return;
+  player.life = Math.max(0, player.life-amount);
+  updateBars();
+  SE.damage();
+  addPopup(0.5,0.32, "-"+amount, "#e8433f");
+  screenShake = 10;
+  if(player.life<=0) onDefeat();
+}
+
+function performAttack(isHeavy){
+  if(screen!=="BATTLE") return;
+  if(player.state==="RECOVERY"||player.state==="THROWN") return;
+  const now = performance.now();
+  const interval = now - player.lastAttackTime;
+
+  if(player.canHadoken && !isHeavy && inputBuffer.endsWith("DR") && !hadoken){
+    hadoken = { x:0.30, born:now };
+    inputBuffer = "";
+    SE.hit();
+    return;
+  }
+  if(player.canDiveAttack && player.state==="JUMPING" && input.y>0.4){
+    player.state="DIVE_ATTACK"; player.diveHits=0;
+    const tick = ()=>{
+      if(player.state!=="DIVE_ATTACK") return;
+      player.diveHits++;
+      applyDamageToEnemy(60); addPopup(0.72,0.4,"60","#f0b429"); SE.bigHit();
+      if(player.diveHits<3) after(120, tick);
+      else after(160, ()=>{ if(player.state==="DIVE_ATTACK") player.state="IDLE"; });
+    };
+    tick();
+    return;
+  }
+  if(player.state!=="IDLE" && player.state!=="CROUCH" && player.state!=="GUARD") return;
+
+  let damage = isHeavy? 30:15;
+  let isFinisher=false;
+  if(!isHeavy){
+    if(player.comboStep===0) player.comboStep=1;
+    else if(player.comboStep===1 && interval<COMBO_INTERVAL_MAX) player.comboStep=2;
+    else player.comboStep=1;
+  } else {
+    if(player.comboStep===2 && interval>=FINISHER_MIN && interval<=FINISHER_MAX){ damage=120; isFinisher=true; }
+    player.comboStep=0;
+  }
+  player.lastAttackTime = now;
+  player.state = isHeavy? "HEAVY_ATTACK":"LIGHT_ATTACK";
+  const confirmedState = player.state;
+  after(isHeavy?250:100, ()=>{
+    if(player.state===confirmedState){
+      applyDamageToEnemy(damage);
+      addPopup(0.72,0.4,String(damage), isFinisher?"#f0b429":"#eef1f8");
+      isFinisher? SE.bigHit() : SE.hit();
+    }
+  });
+  after(isHeavy?700:350, ()=>{ if(player.state!=="THROWN" && screen==="BATTLE") player.state="IDLE"; });
+}
+
+function startJump(){
+  if(player.state==="JUMPING") return;
+  player.state="JUMPING"; player.jumpEndAt = performance.now()+JUMP_DURATION; player.usedDoubleJump=false;
+}
+
+function updateStance(now){
+  if(UNINTERRUPTIBLE.has(player.state)) return;
+  const x=input.x, y=input.y;
+  if(y>0.6){ player.state="CROUCH"; player.guardStart=0; }
+  else if(x<-0.5){
+    if(player.state!=="GUARD"){ player.state="GUARD"; player.guardStart=now; }
+  } else {
+    if(player.state!=="IDLE"){ player.state="IDLE"; }
+    player.guardStart=0;
+  }
+  if(y<-0.4){
+    if(player.state!=="JUMPING") startJump();
+  }
+  if(Math.abs(x)>0.5 || Math.abs(y)>0.5){
+    const dir = y<-0.4? "U" : y>0.4? "D" : x<-0.5? "L" : "R";
+    recordInput(dir, now);
+  }
+}
+
+function onVictory(){
+  if(screen!=="BATTLE") return;
+  screen = "VICTORY_WAIT";
+  BgmPlayer.stop();
+  dock.hidden = true;
+  const isFinal = enemy.type==="DEMON_KING";
+  after(1600, ()=>{
+    defeated.add(enemy.type);
+    if(isFinal){
+      resultText.textContent = "世界に平和が訪れた。\nTHANK YOU FOR PLAYING";
+      btnRetry.textContent = "TO TITLE";
+      showScreen("RESULT");
+    } else if(skillCount()<3){
+      showScreen("SKILL");
+      document.querySelectorAll("#skillScreen button[data-skill]").forEach(btn=>{
+        const s = btn.dataset.skill;
+        const has = (s==="doubleJump"&&player.canDoubleJump)||(s==="diveAttack"&&player.canDiveAttack)||(s==="hadoken"&&player.canHadoken);
+        btn.disabled = has;
+      });
+    } else {
+      resultText.textContent = "VICTORY!";
+      btnRetry.textContent = "NEXT";
+      showScreen("RESULT");
+    }
+  });
+}
+function onDefeat(){
+  if(screen!=="BATTLE") return;
+  screen="DEFEAT_WAIT";
+  BgmPlayer.stop();
+  dock.hidden = true;
+  after(900, ()=>{
+    resultText.textContent = "GAME OVER";
+    btnRetry.textContent = "RETRY";
+    showScreen("RESULT");
+  });
+}
+
+btnRetry.addEventListener("click", ()=>{
+  SE.select();
+  const label = btnRetry.textContent;
+  if(label==="TO TITLE"){
+    defeated.clear();
+    player.canDoubleJump=false; player.canDiveAttack=false; player.canHadoken=false;
+    showScreen("TITLE");
+  } else if(label==="RETRY"){
+    startStage(enemy.type);
+  } else {
+    updateFoeButtons();
+    showScreen("SELECT");
+  }
+});
+
+document.querySelectorAll("#skillScreen button[data-skill]").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    const s = btn.dataset.skill;
+    let msg="";
+    if(s==="doubleJump"){ player.canDoubleJump=true; msg="二段ジャンプ習得！\n【出し方：空中でもう一度↑】"; }
+    if(s==="diveAttack"){ player.canDiveAttack=true; msg="カブト斬り習得！\n【出し方：空中ジャンプ中に↓＋攻撃】"; }
+    if(s==="hadoken"){ player.canHadoken=true; msg="波動剣習得！\n【出し方：↓→＋攻撃】"; }
+    SE.select();
+    resultText.textContent = msg;
+    btnRetry.textContent = "NEXT";
+    showScreen("RESULT");
+  });
+});
+
+document.querySelectorAll("#selectScreen button[data-enemy]").forEach(btn=>{
+  btn.addEventListener("click", ()=>{ ensureAudio(); SE.select(); startStage(btn.dataset.enemy); });
+});
+
+btnStart.addEventListener("click", ()=>{
+  ensureAudio(); SE.select();
+  updateFoeButtons();
+  showScreen("SELECT");
+});
+
+function attackDown(isHeavy){ return (e)=>{ e.preventDefault(); ensureAudio(); performAttack(isHeavy); }; }
+btnLight.addEventListener("pointerdown", attackDown(false));
+btnHeavy.addEventListener("pointerdown", attackDown(true));
+
+window.addEventListener("keydown", (e)=>{
+  if(screen!=="BATTLE") return;
+  if(e.key==="z"||e.key==="Z") performAttack(false);
+  if(e.key==="x"||e.key==="X") performAttack(true);
+});
+
+/* ============ ENEMY AI ============ */
+function pickAttackType(){
+  const r = Math.random();
+  if(r<0.6) return "STRIKE";
+  if(r<0.8) return "SWEEP";
+  return "SMASH";
+}
+const TELEGRAPH_LABEL = { STRIKE:{t:"GUARD",c:"#f0b429"}, SWEEP:{t:"JUMP!",c:"#e8433f"}, SMASH:{t:"CROUCH!",c:"#e8433f"} };
+
+function updateEnemyAI(now){
+  const cfg = ENEMIES[enemy.type];
+  if(enemy.phase==="cooldown"){
+    if(now>=enemy.nextCycle){
+      enemy.phase="telegraph"; enemy.attackType=pickAttackType(); enemy.phaseStart=now;
+    }
+  } else if(enemy.phase==="telegraph"){
+    if(now-enemy.phaseStart>=cfg.telegraph){
+      resolveEnemyAttack();
+      enemy.phase="cooldown"; enemy.phaseStart=now; enemy.nextCycle=now+cfg.cycle;
+    }
+  }
+}
+function resolveEnemyAttack(){
+  const cfg = ENEMIES[enemy.type];
+  const type = enemy.attackType;
+  const base = cfg.dmg[type];
+  let dmg = 0;
+  if(type==="STRIKE"){
+    if(player.state==="GUARD"){ dmg=0; SE.guard(); }
+    else if(player.state==="JUMPING"||player.state==="DIVE_ATTACK"){ dmg=0; }
+    else dmg = base;
+  } else if(type==="SWEEP"){
+    if(player.state==="JUMPING"||player.state==="DIVE_ATTACK"){ dmg=0; }
+    else if(player.state==="GUARD"){ dmg=Math.round(base*0.5); SE.guard(); }
+    else dmg = base;
+  } else { // SMASH
+    if(player.state==="CROUCH"){ dmg=0; }
+    else if(player.state==="GUARD"){ dmg=Math.round(base*0.5); SE.guard(); }
+    else dmg = base;
+  }
+  if(dmg>0) applyDamageToPlayer(dmg);
+  else if(player.state!=="GUARD") addPopup(0.5,0.32,"AVOID!","#3ddad7");
+}
+
+/* ============ RENDER ============ */
+let screenShake=0;
+function resizeCanvas(){
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio||1;
+  canvas.width = rect.width*dpr; canvas.height = rect.height*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener("resize", resizeCanvas);
+
+function drawFighter(x, y, w, h, color, state, facing){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.scale(facing,1);
+  let bodyH = h, crouch=0;
+  if(state==="CROUCH"){ bodyH = h*0.65; crouch = h-bodyH; }
+  if(state==="GUARD"){ /* slight lean */ }
+  ctx.fillStyle = color;
+  ctx.fillRect(-w/2, -bodyH+crouch, w, bodyH);
+  // head
+  ctx.beginPath();
+  ctx.arc(0, -bodyH+crouch-w*0.28, w*0.28, 0, Math.PI*2);
+  ctx.fillStyle = "#f2c9a1";
+  ctx.fill();
+  // weapon / limb accent
+  ctx.strokeStyle = "#eef1f8"; ctx.lineWidth = Math.max(3, w*0.08);
+  ctx.beginPath();
+  if(state==="LIGHT_ATTACK"||state==="HEAVY_ATTACK"||state==="DIVE_ATTACK"){
+    ctx.moveTo(w*0.1, -bodyH*0.6+crouch);
+    ctx.lineTo(w*1.15, -bodyH*0.85+crouch);
+  } else if(state==="GUARD"){
+    ctx.moveTo(-w*0.1,-bodyH*0.7+crouch);
+    ctx.lineTo(-w*0.55,-bodyH*0.55+crouch);
+  } else {
+    ctx.moveTo(w*0.15,-bodyH*0.55+crouch);
+    ctx.lineTo(w*0.65,-bodyH*0.75+crouch);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawEnemyBody(x,y,w,h,type,color,glow){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.scale(-1,1);
+  if(glow){ ctx.shadowColor=glow; ctx.shadowBlur=18; }
+  ctx.fillStyle = color;
+  if(type==="DRAGON"){
+    ctx.beginPath();
+    ctx.moveTo(0,-h); ctx.lineTo(w*0.55,-h*0.55); ctx.lineTo(w*0.15,-h*0.35); ctx.lineTo(w*0.6,0); ctx.lineTo(-w*0.5,0); ctx.closePath();
+    ctx.fill();
+    ctx.beginPath(); ctx.moveTo(w*0.05,-h*0.7); ctx.lineTo(w*0.75,-h*0.95); ctx.lineTo(w*0.3,-h*0.45); ctx.closePath(); ctx.fill();
+  } else if(type==="GOLEM"){
+    ctx.fillRect(-w*0.55,-h,w*1.05,h);
+    ctx.strokeStyle="rgba(0,0,0,.35)"; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(-w*0.2,-h*0.8); ctx.lineTo(w*0.1,-h*0.4); ctx.stroke();
+  } else if(type==="BEHOLDER"){
+    ctx.beginPath(); ctx.arc(0,-h*0.55,w*0.55,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(0,-h*0.55,w*0.22,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#1a1a2e"; ctx.beginPath(); ctx.arc(0,-h*0.55,w*0.1,0,Math.PI*2); ctx.fill();
+  } else if(type==="GRYPHON"){
+    ctx.beginPath(); ctx.moveTo(0,-h); ctx.lineTo(w*0.6,-h*0.5); ctx.lineTo(0,-h*0.1); ctx.lineTo(-w*0.5,-h*0.5); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.arc(w*0.05,-h*0.85,w*0.22,0,Math.PI*2); ctx.fill();
+  } else { // DEMON_KING
+    ctx.fillRect(-w*0.5,-h*1.15,w,h*1.15);
+    ctx.fillStyle="#e8433f";
+    ctx.beginPath(); ctx.arc(-w*0.15,-h*0.95,w*0.07,0,Math.PI*2); ctx.arc(w*0.15,-h*0.95,w*0.07,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle="#8b0000"; ctx.lineWidth=4;
+    ctx.beginPath(); ctx.moveTo(-w*0.3,-h*1.15); ctx.lineTo(-w*0.45,-h*1.35); ctx.moveTo(w*0.3,-h*1.15); ctx.lineTo(w*0.45,-h*1.35); ctx.stroke();
+  }
+  ctx.shadowBlur=0;
+  ctx.restore();
+}
+
+function render(now){
+  resizeCanvas();
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  let shakeX=0;
+  if(screenShake>0){ shakeX = (Math.random()*2-1)*screenShake; screenShake = Math.max(0,screenShake-1.4); }
+  ctx.clearRect(0,0,W,H);
+  ctx.save();
+  ctx.translate(shakeX,0);
+
+  // sky/ground
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,"#171d33"); grad.addColorStop(1,"#0b0e17");
+  ctx.fillStyle = grad; ctx.fillRect(0,0,W,H);
+  const groundY = H*0.82;
+  ctx.fillStyle = "#05070c"; ctx.fillRect(0,groundY,W,H-groundY);
+  ctx.strokeStyle = "rgba(240,180,41,.25)"; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(0,groundY); ctx.lineTo(W,groundY); ctx.stroke();
+
+  if(screen==="BATTLE"||screen==="VICTORY_WAIT"||screen==="DEFEAT_WAIT"){
+    const cfg = ENEMIES[enemy.type];
+    const pW = W*0.09, pH = H*0.34;
+    let pY = groundY;
+    if(player.state==="JUMPING"||player.state==="DIVE_ATTACK"){
+      const prog = Math.min(1,(player.jumpEndAt-now)/JUMP_DURATION);
+      pY = groundY - Math.sin(Math.max(0,prog)*Math.PI)*H*0.22;
+    }
+    drawFighter(W*0.22, pY, pW, pH, "#f0b429", player.state, 1);
+
+    const eW = W*0.12, eH = H*0.36;
+    const glow = enemy.phase==="telegraph" ? TELEGRAPH_LABEL[enemy.attackType].c : null;
+    drawEnemyBody(W*0.78, groundY, eW, eH, enemy.type, cfg.color, glow);
+
+    if(enemy.phase==="telegraph"){
+      const lbl = TELEGRAPH_LABEL[enemy.attackType];
+      ctx.font = "bold 15px ui-monospace, monospace";
+      ctx.textAlign = "center";
+      ctx.fillStyle = lbl.c;
+      ctx.fillText(lbl.t, W*0.78-eW*0.4, groundY-eH*1.35);
+    }
+
+    if(hadoken){
+      const age = now-hadoken.born;
+      hadoken.x = 0.30 + age/600*0.44;
+      ctx.fillStyle="#3ddad7";
+      ctx.beginPath(); ctx.arc(W*hadoken.x, groundY-pH*0.55, W*0.018, 0, Math.PI*2); ctx.fill();
+      if(hadoken.x>=0.74){
+        applyDamageToEnemy(25); addPopup(0.72,0.4,"25","#3ddad7"); SE.hit();
+        hadoken=null;
+      }
+    }
+
+    ctx.font = "bold 14px ui-monospace, monospace";
+    ctx.textAlign="center";
+    for(let i=popups.length-1;i>=0;i--){
+      const p = popups[i]; const age = now-p.born;
+      if(age>900){ popups.splice(i,1); continue; }
+      const ny = p.y - age/900*0.08;
+      ctx.globalAlpha = 1-age/900;
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.text, W*p.x, H*ny);
+      ctx.globalAlpha = 1;
+    }
+  }
+  ctx.restore();
+}
+
+/* ============ MAIN LOOP ============ */
+let prevUp = false;
+function loop(){
+  const now = performance.now();
+  runScheduler(now);
+  if(screen==="BATTLE"){
+    updateStance(now);
+    const upPressed = input.y<-0.4;
+    if(player.state==="JUMPING" && player.canDoubleJump && !player.usedDoubleJump && upPressed && !prevUp){
+      player.jumpEndAt += DOUBLE_JUMP_EXTRA;
+      player.usedDoubleJump = true;
+      SE.select();
+    }
+    prevUp = upPressed;
+    updateEnemyAI(now);
+    if(player.state==="GUARD" && player.guardStart>0 && now-player.guardStart>=GUARD_BREAK_LIMIT){
+      player.state="RECOVERY"; player.guardStart=0;
+      after(700, ()=>{ if(player.state==="RECOVERY") player.state="IDLE"; });
+    }
+    if(player.state==="JUMPING" && now>=player.jumpEndAt){ player.state="IDLE"; }
+  }
+  render(now);
+  requestAnimationFrame(loop);
+}
+
+setupStick();
+showScreen("TITLE");
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
