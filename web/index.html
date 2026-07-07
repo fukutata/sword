@@ -227,6 +227,19 @@
   .skill-list button{ width:300px; max-width:80vw; text-transform:none; font-family:var(--font-body); font-size:13px; text-align:left; }
 
   [hidden]{ display:none !important; }
+
+  #versionTag{
+    position:fixed;
+    left:50%; bottom:4px;
+    transform:translateX(-50%);
+    font-family:var(--font-display);
+    font-size:10px;
+    letter-spacing:.05em;
+    color:var(--muted);
+    opacity:.6;
+    pointer-events:none;
+    z-index:100;
+  }
 </style>
 </head>
 <body>
@@ -324,6 +337,8 @@
   </section>
 
 </div>
+
+<div id="versionTag" aria-hidden="true">v0.1</div>
 
 <script>
 (function(){
