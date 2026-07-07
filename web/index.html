@@ -39,13 +39,16 @@
   #cabinet{
     position:relative;
     width:min(94vw, 860px);
-    aspect-ratio:16/10;
+    height:min(90vh, 640px);
     background:var(--panel);
     border:3px solid var(--line);
     box-shadow:0 0 0 6px var(--ink), 8px 8px 0 rgba(0,0,0,.55);
     overflow:hidden;
     display:flex;
     flex-direction:column;
+  }
+  @media (orientation:landscape){
+    #cabinet{ width:min(94vw, 860px); height:min(94vh, min(94vw,860px)*0.625); }
   }
   #cabinet::after{
     content:"";
@@ -172,6 +175,7 @@
     padding:24px;
     background:linear-gradient(180deg, rgba(11,14,23,.97), rgba(11,14,23,.99));
     text-align:center;
+    overflow-y:auto;
   }
   .screen[hidden]{ display:none; }
   .title-h1{ font-size:clamp(22px,5vw,38px); color:var(--gold); text-shadow:3px 3px 0 var(--line), 5px 5px 0 rgba(0,0,0,.5); }
